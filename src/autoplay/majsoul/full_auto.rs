@@ -668,16 +668,30 @@ impl Session {
     }
 
     /// Press through the result screens, then rest before the next queue.
+    ///
+    /// Stops pressing as soon as the client reloads its own profile — its
+    /// cue for being back on the lobby — because the OK spot there sits
+    /// next to the gacha entry. Without the cue it stops after
+    /// `result_presses`; the queue attempt that follows verifies the rest.
     async fn close_results(&mut self) -> Step<()> {
         let (fa, ms) = self.settings().await?;
         self.phase(FullAutoPhase::Results, "closing the result screens");
+        let lobby_ticket = self.watch().self_info_seq;
+        let back = |w: &LobbyWatch| w.self_info_seq > lobby_ticket || w.in_game;
         self.sleep(draw(fa.result_delay_ms)).await;
         for _ in 0..fa.result_presses {
-            if self.watch().in_game {
-                return Ok(());
+            if back(&self.watch()) {
+                break;
             }
             self.press(&ms, fa.coords.result_ok).await?;
-            self.sleep(draw(fa.result_gap_ms)).await;
+            // Wait out the gap, but leave it early on the cue.
+            let gap = Duration::from_millis(u64::from(draw(fa.result_gap_ms)));
+            if self.wait_for(gap, back).await.is_some() {
+                break;
+            }
+        }
+        if self.watch().in_game {
+            return Ok(());
         }
         self.phase(FullAutoPhase::Resting, "resting before the next game");
         self.sleep(draw(fa.rest_between_games_ms)).await;

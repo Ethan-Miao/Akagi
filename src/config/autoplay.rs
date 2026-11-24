@@ -168,7 +168,7 @@ impl Default for FullAutoCoords {
             ],
             // 3p South is half below the list's edge; aim at what shows.
             modes: [[11.64, 3.31], [11.64, 4.71], [11.64, 6.07], [11.64, 7.22]],
-            result_ok: [14.35, 8.12],
+            result_ok: [14.53, 8.24],
             back: [10.21, 2.22],
             room_scroll_from: 3,
             room_scroll_anchor: [11.64, 4.75],
@@ -197,7 +197,9 @@ pub struct FullAutoConfig {
     pub result_delay_ms: MsRange,
     /// Gap between result-screen presses.
     pub result_gap_ms: MsRange,
-    /// How many result-screen presses to make before trying to queue.
+    /// The most result-screen presses to make before trying to queue
+    /// (three pages after a ranked game: standings, rank, rewards). Fewer
+    /// when the client signals it is back on the lobby first.
     pub result_presses: u32,
     /// Rest in the lobby before queueing the next game.
     pub rest_between_games_ms: MsRange,
@@ -220,7 +222,7 @@ impl Default for FullAutoConfig {
             step_delay_ms: FULL_AUTO_STEP_DELAY,
             result_delay_ms: FULL_AUTO_RESULT_DELAY,
             result_gap_ms: FULL_AUTO_RESULT_GAP,
-            result_presses: 4,
+            result_presses: 3,
             rest_between_games_ms: FULL_AUTO_REST,
             queue_timeout_secs: 600,
             game_stall_secs: 300,

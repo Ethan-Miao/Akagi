@@ -28,6 +28,13 @@ pub const METHOD_NOTIFY_ACCOUNT_LEVEL_CHANGE: &str = ".lq.NotifyAccountLevelChan
 /// few seconds while it stays there) to show how many are queueing. Its
 /// `mode_list` names the room: Bronze asks for `[2, 3, 17, 18]`.
 pub const METHOD_FETCH_CURRENT_MATCH_INFO: &str = ".lq.Lobby.fetchCurrentMatchInfo";
+/// The client reloads its own profile (`account_id: 0`) when it is back on
+/// the lobby after a game's result screens — the cue to stop pressing the
+/// result-screen OK, whose spot in the lobby is next to the gacha.
+pub const METHOD_FETCH_ACCOUNT_INFO: &str = ".lq.Lobby.fetchAccountInfo";
+/// Sent right after a game ends; carries the rank change of that game in
+/// `level_change` (there is no separate `NotifyAccountLevelChange` then).
+pub const METHOD_NOTIFY_GAME_FINISH_REWARD: &str = ".lq.NotifyGameFinishRewardV2";
 const METHOD_AUTH_GAME: &str = ".lq.FastTest.authGame";
 const METHOD_ACTION_PROTOTYPE: &str = ".lq.ActionPrototype";
 const METHOD_NOTIFY_GAME_END_RESULT: &str = ".lq.NotifyGameEndResult";
@@ -93,6 +100,11 @@ pub struct LobbyWatch {
     pub room_view_seq: u64,
     pub room_view_modes: Vec<u32>,
     pub room_view_at: Option<Instant>,
+    /// Own account id, from the login response.
+    pub account_id: Option<u64>,
+    /// Bumped when the client asks for its own profile (see
+    /// [`METHOD_FETCH_ACCOUNT_INFO`]).
+    pub self_info_seq: u64,
 }
 
 pub type SharedLobbyWatch = Arc<RwLock<LobbyWatch>>;
@@ -140,6 +152,9 @@ impl LobbyWatch {
                 };
                 self.login_seq += 1;
                 self.login_at = Some(now);
+                if let Some(id) = account.get("account_id").and_then(JsonValue::as_u64) {
+                    self.account_id = Some(id);
+                }
                 if let Some(id) = level_id(account.get("level")) {
                     self.level4 = Some(id);
                 }
@@ -148,13 +163,32 @@ impl LobbyWatch {
                 }
             }
             (LobbyFrame::Notify, METHOD_NOTIFY_ACCOUNT_LEVEL_CHANGE) => {
-                // `final` is the rank after the change; its leading digit
-                // says which ladder (1 = 4p, 2 = 3p).
-                if let Some(id) = level_id(payload.get("final")) {
-                    match id / 10_000 {
-                        1 => self.level4 = Some(id),
-                        2 => self.level3 = Some(id),
-                        _ => {}
+                self.note_level(level_id(payload.get("final")));
+            }
+            (LobbyFrame::Notify, METHOD_NOTIFY_GAME_FINISH_REWARD) => {
+                self.note_level(level_id(payload.pointer("/level_change/final")));
+            }
+            (LobbyFrame::Request, METHOD_FETCH_ACCOUNT_INFO) => {
+                if payload
+                    .get("account_id")
+                    .and_then(JsonValue::as_u64)
+                    .unwrap_or(0)
+                    == 0
+                {
+                    self.self_info_seq += 1;
+                }
+            }
+            (LobbyFrame::Response, METHOD_FETCH_ACCOUNT_INFO) => {
+                // Only our own profile carries our rank; another player's
+                // (opened from a table) must not overwrite it.
+                let account = payload.get("account");
+                let id = account
+                    .and_then(|a| a.get("account_id"))
+                    .and_then(JsonValue::as_u64);
+                if id.is_some() && id == self.account_id {
+                    if let Some(a) = account {
+                        self.note_level(level_id(a.get("level")));
+                        self.note_level(level_id(a.get("level3")));
                     }
                 }
             }
@@ -220,6 +254,16 @@ impl LobbyWatch {
                     .map(|n| n as u32);
                 self.set_queue(QueueEvent::Matched { mode_id }, now);
             }
+            _ => {}
+        }
+    }
+
+    /// A rank id from any source; its leading digit says which ladder
+    /// (1 = 4p, 2 = 3p).
+    fn note_level(&mut self, id: Option<u32>) {
+        match id {
+            Some(id) if id / 10_000 == 1 => self.level4 = Some(id),
+            Some(id) if id / 10_000 == 2 => self.level3 = Some(id),
             _ => {}
         }
     }
@@ -437,6 +481,49 @@ mod tests {
         assert_eq!(room_of_mode_list(&w.room_view_modes), Some(0));
         assert_eq!(room_of_mode_list(&[15, 16, 25, 26]), Some(4));
         assert_eq!(room_of_mode_list(&[]), None);
+    }
+
+    /// Shapes taken from a live client's post-game traffic.
+    #[test]
+    fn post_game_rank_and_lobby_cue() {
+        let mut w = LobbyWatch::default();
+        w.observe(
+            LobbyFrame::Response,
+            ".lq.Lobby.oauth2Login",
+            &json!({"account": {"account_id": 117, "level": {"id": 10101}, "level3": {"id": 20101}}}),
+        );
+        assert_eq!(w.account_id, Some(117));
+        w.observe(
+            LobbyFrame::Notify,
+            METHOD_NOTIFY_GAME_FINISH_REWARD,
+            &json!({"badges": [], "level_change": {"final": {"id": 10102, "score": 0}, "origin": {"id": 10101}}, "mode_id": 2}),
+        );
+        assert_eq!(w.level4, Some(10102));
+        w.observe(
+            LobbyFrame::Request,
+            METHOD_FETCH_ACCOUNT_INFO,
+            &json!({"account_id": 0}),
+        );
+        assert_eq!(w.self_info_seq, 1);
+        // Someone else's profile: neither a cue nor a rank.
+        w.observe(
+            LobbyFrame::Request,
+            METHOD_FETCH_ACCOUNT_INFO,
+            &json!({"account_id": 999}),
+        );
+        w.observe(
+            LobbyFrame::Response,
+            METHOD_FETCH_ACCOUNT_INFO,
+            &json!({"account": {"account_id": 999, "level": {"id": 10501}}}),
+        );
+        assert_eq!(w.self_info_seq, 1);
+        assert_eq!(w.level4, Some(10102));
+        w.observe(
+            LobbyFrame::Response,
+            METHOD_FETCH_ACCOUNT_INFO,
+            &json!({"account": {"account_id": 117, "level": {"id": 10201}}}),
+        );
+        assert_eq!(w.level4, Some(10201));
     }
 
     #[test]

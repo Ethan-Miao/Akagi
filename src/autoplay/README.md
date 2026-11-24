@@ -194,7 +194,7 @@ without a queue stop the run (`page_dead`). A refused request
 | `queueing` | `startUnifiedMatch` up, then its response | `queued` |
 | `queued` | `NotifyMatchGameStart` / `authGame` (or `queue_timeout_secs` → reload) | `matched` / `in_game` |
 | `in_game` | the game's end (`NotifyGameEndResult` / `NotifyGameTerminate`) | `results` |
-| `results` | `result_presses` presses on the shared OK button | `resting` → queue |
+| `results` | up to `result_presses` presses on the shared OK button, stopping at the client's own-profile reload (`fetchAccountInfo {account_id: 0}`), its cue for being back on the lobby — the OK spot there sits next to the gacha | `resting` → queue |
 
 Coordinates (`FullAutoCoords`, 16:9 units like the in-game tables) are
 config, with built-in defaults; the dashboard's calibration arms a one-shot
