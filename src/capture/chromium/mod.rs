@@ -71,9 +71,102 @@ impl ChromiumBackend {
     }
 }
 
+impl ChromiumBackend {
+    /// Bridges + the CDP loop against a DevTools endpoint — the half of a
+    /// run that does not care who started the browser.
+    async fn run_cdp(&self, ctx: &CaptureCtx, cdp_endpoint: &str) -> Result<()> {
+        let mut hooks = ctx
+            .autoplay
+            .as_ref()
+            .map(|a| crate::bridge::BridgeHooks {
+                time_budget: Some(a.time_budget.clone()),
+                input_watch: Some(a.input_watch.clone()),
+                tenhou_state: Some(a.tenhou_state.clone()),
+                // Chromium has no injection relay; Riichi City autoplay
+                // only runs on the MITM path.
+                riichi_inject: None,
+                notify: None,
+                tenhou_journal: None,
+                lobby_watch: Some(a.lobby.clone()),
+            })
+            .unwrap_or_default();
+        hooks.notify = Some(ctx.notify_bus.clone());
+        hooks.tenhou_journal = Some(crate::bridge::tenhou::journal::new_shared());
+        let bridges = Arc::new(FlowBridges::<cdp::FlowKey>::new(
+            ctx.session.clone(),
+            ctx.platform,
+            hooks,
+        ));
+        cdp::run(
+            cdp_endpoint,
+            bridges,
+            ctx.mjai_bus.clone(),
+            ctx.session.inspector(),
+            ctx.autoplay.clone(),
+            ctx.http.clone(),
+            ctx.notify_bus.clone(),
+            self.cfg.block_telemetry,
+        )
+        .await
+    }
+
+    /// The embedded path (Windows): open the game in a child WebView2 of
+    /// the main window with a DevTools port, attach to it, close it on the
+    /// way out. See `crate::embed`.
+    async fn run_embedded(self: Box<Self>, ctx: CaptureCtx, shutdown: ShutdownToken) -> Result<()> {
+        let data_dir = crate::util::resolve_dir(std::path::Path::new("./webview/game"));
+        std::fs::create_dir_all(&data_dir)
+            .with_context(|| format!("creating game webview dir {}", data_dir.display()))?;
+        let port = crate::embed::free_port()?;
+        let url = if self.cfg.start_url.is_empty() {
+            ChromiumConfig::default().start_url
+        } else {
+            self.cfg.start_url.clone()
+        };
+        info!(
+            "chromium backend starting (embedded): {url} data={} port={port}",
+            data_dir.display()
+        );
+        crate::embed::open(&url, data_dir.clone(), port)
+            .await
+            .context("opening the embedded game view")?;
+
+        let result = async {
+            let cdp_endpoint = launch::wait_for_devtools_endpoint(&data_dir, Some(port))
+                .await
+                .context("reading the game view's CDP endpoint (WebView2 failed to start?)")?;
+            info!("embedded CDP endpoint: {cdp_endpoint}");
+            let cdp_fut = self.run_cdp(&ctx, &cdp_endpoint);
+            tokio::select! {
+                biased;
+                _ = shutdown.wait() => {
+                    info!("chromium backend (embedded): shutdown requested");
+                    Ok(())
+                }
+                r = cdp_fut => {
+                    match &r {
+                        Ok(()) => info!("chromium backend (embedded): CDP loop exited cleanly"),
+                        Err(e) => warn!("chromium backend (embedded): CDP loop error: {e:#}"),
+                    }
+                    r
+                }
+            }
+        }
+        .await;
+        crate::embed::close();
+        result
+    }
+}
+
 #[async_trait]
 impl CaptureBackend for ChromiumBackend {
     async fn run(self: Box<Self>, ctx: CaptureCtx, shutdown: ShutdownToken) -> Result<()> {
+        if self.cfg.embedded {
+            if crate::embed::supported() {
+                return self.run_embedded(ctx, shutdown).await;
+            }
+            warn!("embedded game view is Windows-only; launching a browser instead");
+        }
         let exe = self
             .resolve_executable()
             .context("resolving chromium executable")?;
@@ -115,40 +208,7 @@ impl CaptureBackend for ChromiumBackend {
                 .context("reading chromium CDP endpoint (chromium failed to start?)")?;
         info!("chromium CDP endpoint: {cdp_endpoint}");
 
-        let mut hooks = ctx
-            .autoplay
-            .as_ref()
-            .map(|a| crate::bridge::BridgeHooks {
-                time_budget: Some(a.time_budget.clone()),
-                input_watch: Some(a.input_watch.clone()),
-                tenhou_state: Some(a.tenhou_state.clone()),
-                // Chromium has no injection relay; Riichi City autoplay
-                // only runs on the MITM path.
-                riichi_inject: None,
-                notify: None,
-                tenhou_journal: None,
-                lobby_watch: Some(a.lobby.clone()),
-            })
-            .unwrap_or_default();
-        hooks.notify = Some(ctx.notify_bus.clone());
-        hooks.tenhou_journal = Some(crate::bridge::tenhou::journal::new_shared());
-        let bridges = Arc::new(FlowBridges::<cdp::FlowKey>::new(
-            ctx.session.clone(),
-            ctx.platform,
-            hooks,
-        ));
-
-        let cdp_run = cdp::run(
-            &cdp_endpoint,
-            bridges.clone(),
-            ctx.mjai_bus.clone(),
-            ctx.session.inspector(),
-            ctx.autoplay.clone(),
-            ctx.http.clone(),
-            ctx.notify_bus.clone(),
-            self.cfg.block_telemetry,
-        );
-        let mut cdp_fut = Box::pin(cdp_run);
+        let mut cdp_fut = Box::pin(self.run_cdp(&ctx, &cdp_endpoint));
         let shutdown_fut = shutdown.wait();
         tokio::pin!(shutdown_fut);
 
@@ -215,7 +275,9 @@ impl CaptureBackend for ChromiumBackend {
     }
 
     fn descriptor(&self) -> CaptureDescriptor {
-        let label = if self.cfg.executable.is_empty() {
+        let label = if self.cfg.embedded && crate::embed::supported() {
+            "embedded".to_string()
+        } else if self.cfg.executable.is_empty() {
             "auto-detect".to_string()
         } else {
             self.cfg.executable.clone()

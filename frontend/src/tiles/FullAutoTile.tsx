@@ -42,6 +42,7 @@ const TARGETS: { key: string; target: FullAutoCalibrationTarget }[] = [
   ...[0, 1, 2, 3].map((i) => ({ key: `mode_${i}`, target: { kind: 'mode', index: i } as const })),
   { key: 'back', target: { kind: 'back' } },
   { key: 'result_ok', target: { kind: 'result_ok' } },
+  { key: 'round_ok', target: { kind: 'round_ok' } },
 ]
 
 function fullAutoOf(cfg: AppConfig | null): FullAutoConfig {

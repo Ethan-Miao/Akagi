@@ -5,6 +5,7 @@ pub mod bridge;
 pub mod capture;
 pub mod cli;
 pub mod config;
+pub mod embed;
 pub mod event_bus;
 pub mod game_state;
 pub mod github;
@@ -184,6 +185,9 @@ pub fn run() {
                     runtime.clone(),
                 );
 
+                // The embedded game view (Windows) needs the handle to add
+                // a child webview to the main window.
+                embed::install(app.handle().clone());
                 ipc::install(app.handle(), state.clone())?;
 
                 // Reopen the suggestion overlay if it was left enabled. Safe
@@ -310,6 +314,17 @@ pub fn run() {
                         {
                             error!("Autoplay manager failed: {e:#}");
                         }
+                    });
+                }
+
+                // Mahjong Soul hand-result OK presser: idle unless autoplay
+                // is on with `auto_round_confirm` (it checks per hand).
+                {
+                    let cfg_for_ra = state.config.clone();
+                    let ctx_for_ra = state.autoplay_context.clone();
+                    tauri::async_runtime::spawn(async move {
+                        autoplay::majsoul::round_advance::run_round_advance(cfg_for_ra, ctx_for_ra)
+                            .await;
                     });
                 }
 

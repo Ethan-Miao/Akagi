@@ -80,6 +80,9 @@ export type ChromiumConfig = {
   force_cft: boolean
   extra_args: string[]
   block_telemetry: boolean
+  /** Windows: play inside Akagi's window (see `src/embed.rs`). Absent in
+   *  configs written before the option existed. */
+  embedded?: boolean
 }
 
 export type CaptureConfig = {
@@ -116,6 +119,15 @@ export type MajsoulAutoplayConfig = {
   /** Reload the game page after this many dead decisions in a row; 0 = off. */
   reload_after_failures: number
   dealer_first_discard_extra_delay_ms: MsRange
+  /** Move the pointer off the hand after each decision. Absent in configs
+   *  written before the option existed (the backend defaults it on). */
+  park_cursor?: boolean
+  /** Press the hand-result OK after each hand (wire-gated). */
+  auto_round_confirm?: boolean
+  round_confirm_delay_ms?: MsRange
+  round_confirm_gap_ms?: MsRange
+  round_confirm_presses?: number
+  round_ok?: Point16x9
 }
 
 /** Pre-click delay model parameters. Mirrors
@@ -222,6 +234,7 @@ export type FullAutoCalibrationTarget =
   | { kind: 'mode'; index: number }
   | { kind: 'result_ok' }
   | { kind: 'back' }
+  | { kind: 'round_ok' }
   | { kind: 'scroll_anchor' }
 
 /** Optional cloud-inference settings for the built-in native bot.

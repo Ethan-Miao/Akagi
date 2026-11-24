@@ -111,6 +111,14 @@ pub struct ChromiumConfig {
     /// Takes effect on the next capture start. See
     /// `src/capture/chromium/cdp.rs`.
     pub block_telemetry: bool,
+    /// Windows: play inside Akagi's own window instead of a separate
+    /// browser. The game runs in a second WebView2 (own data directory,
+    /// `webview/game/` next to the exe, so its login persists) that opens a
+    /// local DevTools port; capture and autoplay then attach to it exactly
+    /// as they do to an external browser. `executable`, `user_data_dir`,
+    /// `force_cft` and `extra_args` do not apply. Ignored elsewhere (macOS
+    /// and Linux webviews have no DevTools protocol). See `src/embed.rs`.
+    pub embedded: bool,
 }
 
 impl Default for ChromiumConfig {
@@ -123,6 +131,7 @@ impl Default for ChromiumConfig {
             force_cft: false,
             extra_args: vec![],
             block_telemetry: true,
+            embedded: false,
         }
     }
 }
@@ -180,6 +189,7 @@ mod tests {
                 force_cft: true,
                 extra_args: vec!["--lang=ja".into()],
                 block_telemetry: false,
+                embedded: true,
             },
             http: Default::default(),
         };
@@ -189,6 +199,7 @@ mod tests {
         assert_eq!(back.chromium.executable, "/opt/chrome/chrome");
         assert!(back.chromium.force_cft);
         assert_eq!(back.chromium.extra_args, vec!["--lang=ja"]);
+        assert!(back.chromium.embedded);
         assert!(!back.chromium.block_telemetry);
     }
 

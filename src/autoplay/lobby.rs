@@ -39,6 +39,9 @@ const METHOD_AUTH_GAME: &str = ".lq.FastTest.authGame";
 const METHOD_ACTION_PROTOTYPE: &str = ".lq.ActionPrototype";
 const METHOD_NOTIFY_GAME_END_RESULT: &str = ".lq.NotifyGameEndResult";
 const METHOD_NOTIFY_GAME_TERMINATE: &str = ".lq.NotifyGameTerminate";
+/// Sent by the client when the player closes a hand's last result page
+/// (or its countdown runs out); the next hand is dealt only after it.
+pub const METHOD_CONFIRM_NEW_ROUND: &str = ".lq.FastTest.confirmNewRound";
 
 /// Which way a frame went and what it was, as far as the lobby cares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +103,12 @@ pub struct LobbyWatch {
     pub room_view_seq: u64,
     pub room_view_modes: Vec<u32>,
     pub room_view_at: Option<Instant>,
+    /// Bumped when a hand ends (`ActionHule` / `ActionNoTile` /
+    /// `ActionLiuJu`), when a new one is dealt (`ActionNewRound`), and when
+    /// the client confirms the result screens (`confirmNewRound`).
+    pub round_end_seq: u64,
+    pub new_round_seq: u64,
+    pub round_confirm_seq: u64,
     /// Own account id, from the login response.
     pub account_id: Option<u64>,
     /// Bumped when the client asks for its own profile (see
@@ -236,6 +245,14 @@ impl LobbyWatch {
             }
             (LobbyFrame::Notify, METHOD_ACTION_PROTOTYPE) => {
                 self.last_game_frame_at = Some(now);
+                match payload.get("name").and_then(JsonValue::as_str) {
+                    Some("ActionHule" | "ActionNoTile" | "ActionLiuJu") => self.round_end_seq += 1,
+                    Some("ActionNewRound") => self.new_round_seq += 1,
+                    _ => {}
+                }
+            }
+            (LobbyFrame::Request, METHOD_CONFIRM_NEW_ROUND) => {
+                self.round_confirm_seq += 1;
             }
             (LobbyFrame::Notify, METHOD_NOTIFY_GAME_END_RESULT)
             | (LobbyFrame::Notify, METHOD_NOTIFY_GAME_TERMINATE) => {
@@ -446,6 +463,43 @@ mod tests {
         assert!(!w.in_game);
         assert_eq!(w.game_end_seq, 1);
         assert!(!w.last_end_terminated);
+    }
+
+    /// Shapes from a live game: each hand's end, the client's confirm
+    /// about 15 s later, then the next deal.
+    #[test]
+    fn hand_end_confirm_and_next_deal() {
+        let mut w = LobbyWatch::default();
+        w.observe(
+            LobbyFrame::Notify,
+            METHOD_ACTION_PROTOTYPE,
+            &json!({"name": "ActionHule", "data": {}}),
+        );
+        assert_eq!(w.round_end_seq, 1);
+        w.observe(LobbyFrame::Request, METHOD_CONFIRM_NEW_ROUND, &json!({}));
+        assert_eq!(w.round_confirm_seq, 1);
+        w.observe(
+            LobbyFrame::Notify,
+            METHOD_ACTION_PROTOTYPE,
+            &json!({"name": "ActionNewRound", "data": {}}),
+        );
+        assert_eq!(w.new_round_seq, 1);
+        w.observe(
+            LobbyFrame::Notify,
+            METHOD_ACTION_PROTOTYPE,
+            &json!({"name": "ActionNoTile", "data": {}}),
+        );
+        w.observe(
+            LobbyFrame::Notify,
+            METHOD_ACTION_PROTOTYPE,
+            &json!({"name": "ActionLiuJu", "data": {}}),
+        );
+        w.observe(
+            LobbyFrame::Notify,
+            METHOD_ACTION_PROTOTYPE,
+            &json!({"name": "ActionDiscardTile", "data": {}}),
+        );
+        assert_eq!(w.round_end_seq, 3);
     }
 
     #[test]

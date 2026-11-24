@@ -31,6 +31,13 @@ pub const TILES: [(f64, f64); 14] = [
     (12.509_375, 8.362_5),
 ];
 
+/// Where the pointer rests between decisions (`park_cursor`): left of the
+/// action-button grid (its leftmost column is centred at x 6.4), below the
+/// chi/pon candidate row (y 6.3) and above the hand (y 8.36, raised tiles
+/// reach ~7.5) — over the table, where hovering shows nothing. Each park
+/// draws a fresh point inside, so it never rests on the same pixel.
+pub const CURSOR_REST: ((f64, f64), (f64, f64)) = ((2.6, 4.9), (6.85, 7.35));
+
 /// Horizontal offset between the closed hand's last tile and the
 /// just-drawn tsumohai.
 pub const TSUMO_SPACE: f64 = 0.246_875;

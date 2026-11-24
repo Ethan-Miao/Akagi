@@ -12,6 +12,7 @@
 
 pub mod coords;
 pub mod full_auto;
+pub mod round_advance;
 
 use crate::autoplay::delay::{self, DecisionKind, DelayInput};
 use crate::autoplay::platform::{ActionContext, PlanResult, PlatformAutoplay, Step};
@@ -774,6 +775,7 @@ mod tests {
             click_retries: 0,
             reload_after_failures: 0,
             dealer_first_discard_extra_delay_ms: crate::config::MsRange::fixed(0),
+            ..MajsoulAutoplayConfig::default()
         }
     }
 

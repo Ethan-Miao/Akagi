@@ -14,6 +14,9 @@ running.
 - **`chromium::ChromiumBackend`** — Launches a Chromium-family browser
   with `--user-data-dir=<our profile>` and intercepts WebSocket frames
   via the Chrome DevTools Protocol. No proxy / CA setup.
+  With `capture.chromium.embedded` (Windows) it launches nothing: the game
+  opens in a child WebView2 of Akagi's main window with a local DevTools
+  port (`crate::embed`), and the same CDP half (`run_cdp`) attaches to it.
 
 Both implement `CaptureBackend`:
 

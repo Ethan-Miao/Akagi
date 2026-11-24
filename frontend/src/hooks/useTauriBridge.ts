@@ -20,6 +20,7 @@ import { useAnalysisStore } from '@/stores/analysisStore'
 import { useBotStore } from '@/stores/botStore'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useFullAutoStore } from '@/stores/fullAutoStore'
+import { useGameViewStore } from '@/stores/gameViewStore'
 import { useNotifyStore } from '@/stores/notifyStore'
 import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { useInstallStore } from '@/stores/installStore'
@@ -71,6 +72,12 @@ export function useTauriBridge() {
         /* ignore */
       }
       try {
+        const gv = await invoke<{ open: boolean }>('game_view_state')
+        if (!cancelled) useGameViewStore.getState().setOpen(gv.open)
+      } catch {
+        /* ignore: older backend */
+      }
+      try {
         const fa = await invoke<FullAutoStatus>('full_auto_status')
         if (!cancelled) useFullAutoStore.getState().set(fa)
       } catch {
@@ -120,6 +127,10 @@ export function useTauriBridge() {
 
     listen<CaptureStatus>('capture-status', (s) => {
       useCaptureStore.getState().set(s)
+    }).then((u) => unlistens.push(u))
+
+    listen<{ open: boolean }>('game-view', (s) => {
+      useGameViewStore.getState().setOpen(s.open)
     }).then((u) => unlistens.push(u))
 
     listen<FullAutoStatus>('full-auto-status', (s) => {

@@ -18,6 +18,8 @@ const HOVER_DELAY: MsRange = MsRange::new(150, 300);
 const CLICK_HOLD: MsRange = MsRange::new(60, 140);
 const VERIFY_INPUT: MsRange = MsRange::new(300, 500);
 const DEALER_FIRST_DISCARD_EXTRA: MsRange = MsRange::new(2000, 3000);
+const ROUND_CONFIRM_DELAY: MsRange = MsRange::new(3500, 6500);
+const ROUND_CONFIRM_GAP: MsRange = MsRange::new(1800, 3200);
 upgraded_range!(upgrade_min_delay, 1000, MIN_DELAY);
 upgraded_range!(upgrade_min_button_delay, 1600, MIN_BUTTON_DELAY);
 upgraded_range!(upgrade_inter_click_delay, 300, INTER_CLICK_DELAY);
@@ -456,6 +458,27 @@ pub struct MajsoulAutoplayConfig {
     /// the regular pre-click delay anyway).
     #[serde(deserialize_with = "upgrade_dealer_first_discard_extra")]
     pub dealer_first_discard_extra_delay_ms: MsRange,
+    /// After a decision's presses, move the pointer off the hand to a
+    /// neutral spot (left of the action buttons, above the hand). Left
+    /// where it pressed, it sits over the slot the next tile slides into,
+    /// and the client raises a hovered tile — a pointer that never moves
+    /// after a discard is not how people play.
+    pub park_cursor: bool,
+    /// Press the hand-result screens' OK after each hand (win / draw) so
+    /// the next hand is dealt without waiting out the client's ~15 s
+    /// countdown. Gated on the wire: presses only between the hand's end
+    /// and the client's own `confirmNewRound`, never after the game ends.
+    /// See `autoplay::majsoul::round_advance`.
+    pub auto_round_confirm: bool,
+    /// Wait after a hand ends before the first OK press (the win reveal
+    /// and yaku list animate first).
+    pub round_confirm_delay_ms: MsRange,
+    /// Gap between OK presses (one per result page).
+    pub round_confirm_gap_ms: MsRange,
+    /// Most OK presses per hand.
+    pub round_confirm_presses: u32,
+    /// The hand-result screens' OK button, 16:9 units.
+    pub round_ok: [f64; 2],
 }
 
 impl MajsoulAutoplayConfig {
@@ -468,6 +491,8 @@ impl MajsoulAutoplayConfig {
             click_hold_ms: self.click_hold_ms.draw(rng),
             verify_input_ms: self.verify_input_ms.draw(rng),
             dealer_first_discard_extra_delay_ms: self.dealer_first_discard_extra_delay_ms.draw(rng),
+            round_confirm_delay_ms: self.round_confirm_delay_ms.draw(rng),
+            round_confirm_gap_ms: self.round_confirm_gap_ms.draw(rng),
             ..self.clone()
         }
     }
@@ -485,6 +510,12 @@ impl Default for MajsoulAutoplayConfig {
             click_retries: 2,
             reload_after_failures: 3,
             dealer_first_discard_extra_delay_ms: DEALER_FIRST_DISCARD_EXTRA,
+            park_cursor: true,
+            auto_round_confirm: true,
+            round_confirm_delay_ms: ROUND_CONFIRM_DELAY,
+            round_confirm_gap_ms: ROUND_CONFIRM_GAP,
+            round_confirm_presses: 4,
+            round_ok: [14.53, 8.24],
         }
     }
 }

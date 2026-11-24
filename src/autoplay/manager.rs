@@ -29,6 +29,7 @@ use crate::game_state::snapshot::GameStateSnapshot;
 use crate::game_state::tracker::GameTracker;
 use crate::schema::MjaiEvent;
 use chromiumoxide::page::Page;
+use rand::Rng;
 use riichienv_core::action::Action;
 use riichienv_core::state::legal_actions::GameStateLegalActions;
 use riichienv_core::state_3p::legal_actions::GameState3PLegalActions;
@@ -632,6 +633,35 @@ impl AutoplayManager {
                         "The declaration press was lost and the tile was discarded without it. This hand is not in riichi — and the bot may still believe it declared, so its reads for the rest of this hand can be off.",
                     ),
                 );
+            }
+        }
+
+        // Take the pointer off the hand (see `park_cursor`). After the
+        // verification above, so a retry has pressed before it moves.
+        if let (true, Some(rect)) = (cfg.park_cursor, rect) {
+            self.park_cursor(rect).await;
+        }
+    }
+
+    /// Move the pointer to a fresh point of `coords::CURSOR_REST` after a
+    /// short, human-length beat. Best-effort: a failure only means the
+    /// pointer stays where it pressed.
+    async fn park_cursor(&self, rect: CanvasRect) {
+        let ((x0, x1), (y0, y1)) = crate::autoplay::majsoul::coords::CURSOR_REST;
+        let (beat, nx, ny) = {
+            let mut rng = rand::rng();
+            (
+                rng.random_range(60..=260u64),
+                rng.random_range(x0..=x1),
+                rng.random_range(y0..=y1),
+            )
+        };
+        tokio::time::sleep(Duration::from_millis(beat)).await;
+        let (px, py) = rect.pixel(nx, ny);
+        let page_guard = self.ctx.page.read().await;
+        if let Some(page) = page_guard.as_ref() {
+            if let Err(e) = crate::autoplay::cdp_input::move_to(page, px, py).await {
+                debug!("autoplay: parking the cursor failed: {e:#}");
             }
         }
     }

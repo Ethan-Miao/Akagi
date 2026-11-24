@@ -101,6 +101,14 @@ pub async fn dispatch_click_shaped(
     Ok(())
 }
 
+/// Move the pointer to `(x, y)` (CSS pixels) without pressing.
+pub async fn move_to(page: &Page, x: f64, y: f64) -> Result<()> {
+    page.move_mouse(Point::new(x, y))
+        .await
+        .context("CDP move_mouse")?;
+    Ok(())
+}
+
 /// Scroll the wheel at `(x, y)` (CSS pixels) in `ticks` notches of
 /// `delta_y` each, pausing `gap_ms` between them. The cursor is moved there
 /// first: Laya routes a wheel event to whatever list is under the pointer.

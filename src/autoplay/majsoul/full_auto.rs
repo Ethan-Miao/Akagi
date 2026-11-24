@@ -879,6 +879,9 @@ pub enum CalibrationTarget {
     ResultOk,
     Back,
     ScrollAnchor,
+    /// The hand-result screens' OK (`autoplay.majsoul.round_ok`) — not a
+    /// full-auto coordinate, but calibrated the same way.
+    RoundOk,
 }
 
 impl CalibrationTarget {
@@ -891,6 +894,8 @@ impl CalibrationTarget {
             Self::ResultOk => coords.result_ok = at,
             Self::Back => coords.back = at,
             Self::ScrollAnchor => coords.room_scroll_anchor = at,
+            // Lives in the majsoul section; the caller stores it.
+            Self::RoundOk => return false,
             _ => return false,
         }
         true

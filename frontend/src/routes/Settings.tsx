@@ -1055,6 +1055,18 @@ function AutoplayCard({
           step={100}
           onChange={(v) => setMajsoulField({ dealer_first_discard_extra_delay_ms: v })}
         />
+        <Toggle
+          label={t('settings.autoplay.park_cursor')}
+          value={ap.majsoul.park_cursor ?? true}
+          onChange={(v) => setMajsoulField({ park_cursor: v })}
+        />
+        <span className="text-xs text-muted-foreground">{t('settings.autoplay.park_cursor_hint')}</span>
+        <Toggle
+          label={t('settings.autoplay.auto_round_confirm')}
+          value={ap.majsoul.auto_round_confirm ?? true}
+          onChange={(v) => setMajsoulField({ auto_round_confirm: v })}
+        />
+        <span className="text-xs text-muted-foreground">{t('settings.autoplay.auto_round_confirm_hint')}</span>
         <p className="text-xs text-muted-foreground">
           {t('settings.autoplay.platform_note')}
         </p>
@@ -1108,8 +1120,15 @@ function CaptureCard({
     force_cft: false,
     extra_args: [],
     block_telemetry: true,
+    embedded: false,
   }
   const [detected, setDetected] = useState<DetectedBrowser[] | null>(null)
+  const [embedSupported, setEmbedSupported] = useState(false)
+  useEffect(() => {
+    invoke<boolean>('game_view_supported')
+      .then(setEmbedSupported)
+      .catch(() => setEmbedSupported(false))
+  }, [])
   const [detecting, setDetecting] = useState(false)
 
   const probe = async () => {
@@ -1230,6 +1249,16 @@ function CaptureCard({
                 {detecting ? t('common.detecting') : t('common.detect')}
               </Button>
             </div>
+            {embedSupported && (
+              <>
+                <Toggle
+                  label={t('settings.embedded_game')}
+                  value={!!chromium.embedded}
+                  onChange={(v) => setChromium({ embedded: v })}
+                />
+                <span className="text-xs text-muted-foreground">{t('settings.embedded_game_hint')}</span>
+              </>
+            )}
             <Field label={t('settings.user_data_dir')} hint={t('settings.user_data_dir_hint')}>
               <Input
                 value={chromium.user_data_dir}

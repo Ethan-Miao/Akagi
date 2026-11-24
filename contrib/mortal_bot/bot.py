@@ -129,12 +129,87 @@ def show_from_meta(meta: dict, top_n: int) -> dict | None:
     return {"title": "Mortal", "items": items}
 
 
+# ---------- play style ----------
+# Applied where Mortal picks its action (`MortalEngine._react_batch`), so
+# libriichi still turns the chosen index into the mjai event — chi/pon tile
+# choice and tsumogiri stay Mortal's own bookkeeping.
+
+RIICHI = 37
+CALLS = (38, 39, 40, 41)  # chi low/mid/high, pon (not kan)
+NEVER_SWAP = (43, 44)  # a win or an abortive draw is never traded
+
+
+def restyle(q: list[float], mask: list[bool], style: dict, rng) -> tuple[int, list[float], bool]:
+    """Pick an action from one decision's 46 Q-values.
+
+    1. Aggression: add `riichi_bias` to riichi and `call_bias` to chi/pon
+       (Q units; the HUD's percentages are a softmax of these).
+    2. Second choice: when the runner-up's share is at least `threshold`,
+       take it with probability `rate * p2 / p1` — near-ties often,
+       lopsided calls rarely. Never when either is a win or abortive draw.
+
+    Returns (action, the biased Q-values, whether it is the top choice)."""
+    q = list(q)
+    legal = [i for i in range(len(q)) if mask[i]]
+    if style["riichi_bias"] and RIICHI in legal:
+        q[RIICHI] += style["riichi_bias"]
+    if style["call_bias"]:
+        for i in CALLS:
+            if i in legal:
+                q[i] += style["call_bias"]
+    ranked = sorted(legal, key=lambda i: q[i], reverse=True)
+    best = ranked[0]
+    if len(ranked) < 2 or style["rate"] <= 0:
+        return best, q, True
+    second = ranked[1]
+    if best in NEVER_SWAP or second in NEVER_SWAP:
+        return best, q, True
+    top = max(q[i] for i in legal)
+    weights = {i: pow(2.718281828459045, q[i] - top) for i in legal}
+    total = sum(weights.values())
+    p1, p2 = weights[best] / total, weights[second] / total
+    if p2 >= style["threshold"] and rng.random() < style["rate"] * p2 / p1:
+        return second, q, False
+    return best, q, True
+
+
+def style_from(settings: dict) -> dict:
+    def num(key, default, lo, hi):
+        try:
+            return min(hi, max(lo, float(settings.get(key, default))))
+        except (TypeError, ValueError):
+            return default
+    aggression = num("aggression", 0.0, 0.0, 1.0)
+    return {
+        # Calibrated on a real game: the median Q gap between the top two
+        # options is ~2, a coin-flip riichi or call ~0.5; full aggression
+        # (+0.6 / +0.4) tips borderline ones, never clear folds.
+        "riichi_bias": 0.6 * aggression,
+        "call_bias": 0.4 * aggression,
+        "threshold": num("second_choice_threshold", 0.18, 0.05, 0.5),
+        "rate": num("second_choice_rate", 0.0, 0.0, 1.0),
+    }
+
+
 # ---------- model ----------
 
-def build_engine(model_path: Path):
+def build_engine(model_path: Path, style: dict):
+    import random
     import torch
     from engine import MortalEngine
     from model import Brain, DQN
+
+    class StyledEngine(MortalEngine):
+        """Mortal's engine with `restyle` deciding instead of argmax."""
+
+        def _react_batch(self, obs, masks, invisible_obs):
+            actions, q_out, mask_out, greedy = super()._react_batch(obs, masks, invisible_obs)
+            for b in range(len(actions)):
+                a, q, g = restyle(q_out[b], mask_out[b], style, rng)
+                actions[b], q_out[b], greedy[b] = a, q, g
+            return actions, q_out, mask_out, greedy
+
+    rng = random.Random()
 
     torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
     state = torch.load(str(model_path), weights_only=True, map_location=torch.device("cpu"))
@@ -146,7 +221,7 @@ def build_engine(model_path: Path):
     dqn = DQN(version=version).eval()
     brain.load_state_dict(state["mortal"])
     dqn.load_state_dict(state["current_dqn"])
-    engine = MortalEngine(
+    engine = StyledEngine(
         brain,
         dqn,
         version=version,
@@ -161,6 +236,15 @@ def build_engine(model_path: Path):
 
 
 def main() -> None:
+    # Akagi writes UTF-8; Python on Windows reads pipes in the locale's code
+    # page (GBK on Chinese systems) unless told otherwise, which turns
+    # non-ASCII player names into lone surrogates that libriichi's JSON
+    # parser rejects.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     settings = load_settings()
     top_n = int(settings.get("show_top_n", 3) or 3)
     model_path = Path(settings.get("model_path") or "mortal.pth")
@@ -179,8 +263,13 @@ def main() -> None:
     t0 = time.monotonic()
     from libriichi.mjai import Bot
 
-    engine, desc = build_engine(model_path)
-    log(f"loaded {model_path.name} ({desc}) in {time.monotonic() - t0:.1f}s")
+    style = style_from(settings)
+    engine, desc = build_engine(model_path, style)
+    log(
+        f"loaded {model_path.name} ({desc}) in {time.monotonic() - t0:.1f}s; "
+        f"style: riichi {style['riichi_bias']:+.2f}, calls {style['call_bias']:+.2f}, "
+        f"second choice >= {style['threshold']:.0%} at rate {style['rate']:.2f}"
+    )
 
     seat = initial_seat()
     bot = None
@@ -205,6 +294,10 @@ def main() -> None:
                 continue
             if typ == "end_game":
                 game_over = True
+            if typ == "start_game":
+                # Mortal never reads the names (the field defaults), and a
+                # name is the one free-text field in the stream: keep it out.
+                ev = {k: v for k, v in ev.items() if k != "names"}
             last = i == len(events) - 1
             out = bot.react(json.dumps(ev, separators=(",", ":")), can_act=last)
             if last and out:

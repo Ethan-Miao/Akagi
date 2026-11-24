@@ -1783,6 +1783,32 @@ pub async fn native_api_checkout_result(
     .map_err(|e| format!("{e:#}"))
 }
 
+// ---------- embedded game view (Windows) ----------
+
+/// The frontend's game placeholder moved, resized, or went off screen.
+/// Stored even while no view is open, so a view that opens later starts in
+/// the right place.
+#[tauri::command]
+pub async fn game_view_set_bounds(bounds: crate::embed::ViewBounds) -> CmdResult<()> {
+    crate::embed::set_bounds(bounds).map_err(|e| e.to_string())
+}
+
+/// `{ open }` — whether the embedded game view exists right now (the
+/// `game-view` event carries changes).
+#[tauri::command]
+pub async fn game_view_state() -> CmdResult<crate::embed::GameViewState> {
+    Ok(crate::embed::GameViewState {
+        open: crate::embed::is_open(),
+    })
+}
+
+/// Whether this platform can embed the game at all (Settings hides the
+/// switch elsewhere).
+#[tauri::command]
+pub async fn game_view_supported() -> CmdResult<bool> {
+    Ok(crate::embed::supported())
+}
+
 // ---------- full auto (Mahjong Soul) ----------
 
 use crate::autoplay::majsoul::full_auto::{self, CalibrationTarget, FullAutoStatus};
@@ -1830,7 +1856,9 @@ pub async fn full_auto_calibrate(
             .map_err(|e| e.to_string())?;
     let cfg = {
         let mut cfg = state.config.write().await;
-        if !target.apply(&mut cfg.autoplay.full_auto.coords, at) {
+        if target == CalibrationTarget::RoundOk {
+            cfg.autoplay.majsoul.round_ok = at;
+        } else if !target.apply(&mut cfg.autoplay.full_auto.coords, at) {
             return Err(format!("unknown calibration target {target:?}"));
         }
         cfg.clone()
@@ -1886,6 +1914,9 @@ macro_rules! ipc_handlers {
         ::tauri::generate_handler![
             $crate::ipc::commands::get_config,
             $crate::ipc::commands::update_config,
+            $crate::ipc::commands::game_view_set_bounds,
+            $crate::ipc::commands::game_view_state,
+            $crate::ipc::commands::game_view_supported,
             $crate::ipc::commands::full_auto_start,
             $crate::ipc::commands::full_auto_stop,
             $crate::ipc::commands::full_auto_status,

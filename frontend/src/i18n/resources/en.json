@@ -507,7 +507,11 @@
       "min_delay": "Minimum delay (ms)",
       "min_delay_hint": "Safety floor for every action: Mahjong Soul needs time to render the UI, and a click issued too early is silently lost. Each decision draws its own value; in Lua mode it is handed to delay.lua, which applies it (the default script does), in legacy mode Akagi applies it.",
       "min_button_delay": "Minimum button delay (ms)",
-      "min_button_delay_hint": "Higher floor for chi/pon/kan/ron/skip/riichi buttons — they appear only after the discard animation plus their own pop-in, later than hand tiles. Raise this if buttons are still missing clicks."
+      "min_button_delay_hint": "Higher floor for chi/pon/kan/ron/skip/riichi buttons — they appear only after the discard animation plus their own pop-in, later than hand tiles. Raise this if buttons are still missing clicks.",
+      "park_cursor": "Move the pointer off the hand after each move",
+      "park_cursor_hint": "Otherwise the pointer stays where it pressed and the client raises the tile that slides under it.",
+      "auto_round_confirm": "Confirm hand results automatically",
+      "auto_round_confirm_hint": "After each hand (not the game's last), press OK on the result pages so the next hand starts without waiting out the countdown. Only presses while those pages are up."
     },
     "overlay": "Suggestion overlay",
     "overlay_enabled": "Show overlay window",
@@ -515,7 +519,9 @@
     "overlay_top_n": "Suggestions shown",
     "overlay_opacity": "Opacity",
     "overlay_always_on_top": "Keep above other windows",
-    "overlay_always_on_top_hint": "Turn this off to park the overlay on a second monitor. Note that a game running in exclusive fullscreen draws over every always-on-top window — use borderless or windowed mode."
+    "overlay_always_on_top_hint": "Turn this off to park the overlay on a second monitor. Note that a game running in exclusive fullscreen draws over every always-on-top window — use borderless or windowed mode.",
+    "embedded_game": "Play inside Akagi (embedded game view)",
+    "embedded_game_hint": "The game opens inside this window — game on the left, dashboard on the right — instead of a separate browser. It has its own login (sign in once). Browser path, profile folder and Chrome-for-Testing settings do not apply. Restart capture to switch."
   },
   "setup": {
     "title": "Akagi Setup",
@@ -1015,7 +1021,8 @@
       "mode_2": "3p East",
       "mode_3": "3p South",
       "result_ok": "Result screen OK",
-      "back": "Back (top of the lists)"
+      "back": "Back (top of the lists)",
+      "round_ok": "Hand-result OK (during a game)"
     },
     "stop": {
       "user": "Stopped.",
@@ -1033,5 +1040,8 @@
       "no_canvas": "Could not find the game canvas.",
       "calibrate": "A room button opened the wrong room — calibrate the room positions."
     }
+  },
+  "game_view": {
+    "loading": "Loading the game…"
   }
 }
