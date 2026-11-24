@@ -1,0 +1,107 @@
+name: Mortal bot (Windows)
+
+# Builds an installable Mortal bot zip for Akagi v3 on Windows x64:
+# contrib/mortal_bot/ + upstream Mortal's model.py / engine.py + libriichi
+# compiled for CPython 3.12 (the Python Akagi bundles). The checkpoint is
+# not included; see contrib/mortal_bot/README.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MORTAL_REF: 0cff2b52982be5b1163aa9a62fb01f03ce91e0d2
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Equim-chan/Mortal
+          ref: ${{ env.MORTAL_REF }}
+          path: mortal-src
+
+      - uses: actions/setup-python@v5
+        id: py
+        with:
+          python-version: '3.12'
+
+      - name: Build libriichi
+        shell: bash
+        working-directory: mortal-src
+        env:
+          PYO3_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          set -euxo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo build -p libriichi --lib --release
+
+      - name: Assemble the bot folder
+        shell: bash
+        run: |
+          set -euxo pipefail
+          out=dist/mortal
+          mkdir -p "$out"
+          cp contrib/mortal_bot/bot.py contrib/mortal_bot/pyproject.toml \
+             contrib/mortal_bot/manifest.toml contrib/mortal_bot/README.md "$out/"
+          cp mortal-src/mortal/model.py mortal-src/mortal/engine.py "$out/"
+          cp mortal-src/LICENSE "$out/LICENSE"
+          cp mortal-src/target/release/riichi.dll "$out/libriichi.pyd"
+          echo "$MORTAL_REF" > "$out/MORTAL_REF"
+
+      # Exercise the Windows build end to end with a random-weight checkpoint
+      # of the real shape: libriichi loads, the engine runs, and a hand's
+      # first own draw is answered with exactly one discard.
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --quiet numpy torch
+          cd dist/mortal
+          python - <<'EOF'
+          import json, subprocess, sys, torch
+          from model import Brain, DQN
+          brain, dqn = Brain(version=4, num_blocks=40, conv_channels=192), DQN(version=4)
+          torch.save({"mortal": brain.state_dict(), "current_dqn": dqn.state_dict(),
+                      "config": {"control": {"version": 4}, "resnet": {"num_blocks": 40, "conv_channels": 192}}},
+                     "smoke.pth")
+          q = "?"
+          lines = [
+              [{"type": "start_game", "names": ["a", "b", "c", "d"], "id": 0}],
+              [{"type": "start_kyoku", "bakaze": "E", "dora_marker": "1m", "kyoku": 1, "honba": 0,
+                "kyotaku": 0, "oya": 0, "scores": [25000] * 4,
+                "tehais": [["1m", "2m", "3m", "4p", "5p", "6p", "7s", "8s", "9s", "E", "E", "S", "W"],
+                           [q] * 13, [q] * 13, [q] * 13]}],
+              [{"type": "tsumo", "actor": 0, "pai": "N"}],
+              [{"type": "end_game"}],
+          ]
+          cfg = "smoke_cfg.json"
+          json.dump({"model_path": "smoke.pth"}, open(cfg, "w"))
+          p = subprocess.run([sys.executable, "bot.py", "0"], input="\n".join(json.dumps(l) for l in lines) + "\n",
+                             capture_output=True, text=True, timeout=300,
+                             env={**__import__("os").environ, "AKAGI_BOT_CONFIG": cfg})
+          print(p.stderr)
+          out = [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
+          print(out)
+          assert p.returncode == 0, p.returncode
+          assert len(out) == len(lines), out
+          assert out[2]["type"] == "dahai" and out[2]["actor"] == 0, out[2]
+          assert "show" in out[2]["meta"], out[2]
+          EOF
+          rm -f smoke.pth smoke_cfg.json
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/mortal -DestinationPath dist/mortal.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mortal-bot-windows-x64
+          path: dist/mortal.zip
+          if-no-files-found: error
+          retention-days: 14
