@@ -1,0 +1,23 @@
+manifest_version = 1
+
+[bot]
+name        = "mortal"
+display     = "Mortal"
+description = "Equim-chan/Mortal (deep RL, Mortal v4 checkpoint). 4-player only."
+version     = "0.1.0"
+supported_modes = ["4p"]
+
+[settings.model_path]
+type    = "string"
+label   = "Checkpoint file"
+default = "mortal.pth"
+help    = "Path of the Mortal .pth checkpoint; relative paths are inside this bot's folder."
+
+[settings.show_top_n]
+type    = "int"
+label   = "Candidates shown"
+default = 3
+min     = 1
+max     = 8
+step    = 1
+help    = "How many of Mortal's top actions the Bot Show tile lists."
