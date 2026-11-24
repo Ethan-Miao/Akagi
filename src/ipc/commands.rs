@@ -1783,6 +1783,73 @@ pub async fn native_api_checkout_result(
     .map_err(|e| format!("{e:#}"))
 }
 
+// ---------- full auto (Mahjong Soul) ----------
+
+use crate::autoplay::majsoul::full_auto::{self, CalibrationTarget, FullAutoStatus};
+
+/// Start full-auto. Preconditions (platform, capture mode, autoplay, bot)
+/// are checked by the runner, which stops at once with a reason the
+/// dashboard shows; this only refuses a double start.
+#[tauri::command]
+pub async fn full_auto_start(state: State<'_, AppState>) -> CmdResult<FullAutoStatus> {
+    let control = &state.autoplay_context.full_auto;
+    if !control.start() {
+        return Err("full auto is already running".into());
+    }
+    Ok(control.status())
+}
+
+/// Stop full-auto. A game in progress is still played out by autoplay; no
+/// further match is queued.
+#[tauri::command]
+pub async fn full_auto_stop(state: State<'_, AppState>) -> CmdResult<FullAutoStatus> {
+    let control = &state.autoplay_context.full_auto;
+    control.stop();
+    Ok(control.status())
+}
+
+#[tauri::command]
+pub async fn full_auto_status(state: State<'_, AppState>) -> CmdResult<FullAutoStatus> {
+    Ok(state.autoplay_context.full_auto.status())
+}
+
+/// Record where one lobby button is: wait (up to 30 s) for the user's next
+/// real click in the game window, store it as `target` in
+/// `autoplay.full_auto.coords`, persist, and return the point (16:9 units).
+#[tauri::command]
+pub async fn full_auto_calibrate(
+    target: CalibrationTarget,
+    state: State<'_, AppState>,
+) -> CmdResult<[f64; 2]> {
+    if state.autoplay_context.full_auto.is_running() {
+        return Err("stop full auto before calibrating".into());
+    }
+    let at =
+        full_auto::record_next_click(&state.autoplay_context, std::time::Duration::from_secs(30))
+            .await
+            .map_err(|e| e.to_string())?;
+    let cfg = {
+        let mut cfg = state.config.write().await;
+        if !target.apply(&mut cfg.autoplay.full_auto.coords, at) {
+            return Err(format!("unknown calibration target {target:?}"));
+        }
+        cfg.clone()
+    };
+    persist_config(&cfg, &state.config_path).map_err(|e| e.to_string())?;
+    Ok(at)
+}
+
+/// Put every full-auto coordinate back to the built-in defaults.
+#[tauri::command]
+pub async fn full_auto_reset_coords(state: State<'_, AppState>) -> CmdResult<()> {
+    let cfg = {
+        let mut cfg = state.config.write().await;
+        cfg.autoplay.full_auto.coords = crate::config::FullAutoCoords::default();
+        cfg.clone()
+    };
+    persist_config(&cfg, &state.config_path).map_err(|e| e.to_string())
+}
+
 fn persist_config(config: &AppConfig, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -1819,6 +1886,11 @@ macro_rules! ipc_handlers {
         ::tauri::generate_handler![
             $crate::ipc::commands::get_config,
             $crate::ipc::commands::update_config,
+            $crate::ipc::commands::full_auto_start,
+            $crate::ipc::commands::full_auto_stop,
+            $crate::ipc::commands::full_auto_status,
+            $crate::ipc::commands::full_auto_calibrate,
+            $crate::ipc::commands::full_auto_reset_coords,
             $crate::ipc::commands::set_overlay_enabled,
             $crate::ipc::commands::list_bots,
             $crate::ipc::commands::set_active_bot,

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { HAS_TAURI, invoke, listen } from '@/lib/tauri'
 import type {
+  FullAutoStatus,
   AnalysisResult,
   BotResponse,
   BotStatus,
@@ -18,6 +19,7 @@ import { useGameStore } from '@/stores/gameStore'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useBotStore } from '@/stores/botStore'
 import { useCaptureStore } from '@/stores/captureStore'
+import { useFullAutoStore } from '@/stores/fullAutoStore'
 import { useNotifyStore } from '@/stores/notifyStore'
 import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { useInstallStore } from '@/stores/installStore'
@@ -68,6 +70,12 @@ export function useTauriBridge() {
       } catch {
         /* ignore */
       }
+      try {
+        const fa = await invoke<FullAutoStatus>('full_auto_status')
+        if (!cancelled) useFullAutoStore.getState().set(fa)
+      } catch {
+        /* ignore: older backend without full auto */
+      }
       await refreshGame()
       try {
         const a = await invoke<AnalysisResult | null>('get_analysis')
@@ -112,6 +120,10 @@ export function useTauriBridge() {
 
     listen<CaptureStatus>('capture-status', (s) => {
       useCaptureStore.getState().set(s)
+    }).then((u) => unlistens.push(u))
+
+    listen<FullAutoStatus>('full-auto-status', (s) => {
+      useFullAutoStore.getState().set(s)
     }).then((u) => unlistens.push(u))
 
     listen<BotResponse>('bot-response', (r) => {

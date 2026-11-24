@@ -153,7 +153,76 @@ export type AutoplayConfig = {
   enabled: boolean
   majsoul: MajsoulAutoplayConfig
   delay: DelayModelConfig
+  /** Absent in a config written by an older build; the backend fills the
+   *  defaults, so readers should fall back to `DEFAULT_FULL_AUTO`. */
+  full_auto?: FullAutoConfig
 }
+
+// ---------- full auto (Mahjong Soul) ----------
+// Mirrors `src/config/autoplay.rs::FullAutoConfig` and
+// `src/autoplay/majsoul/full_auto.rs::FullAutoStatus`.
+
+export type FullAutoRoom = 'auto' | 'bronze' | 'silver' | 'gold' | 'jade' | 'throne'
+export type FullAutoMode = 'east4' | 'south4' | 'east3' | 'south3'
+export type Point16x9 = [number, number]
+
+export type FullAutoCoords = {
+  ranked: Point16x9
+  rooms: [Point16x9, Point16x9, Point16x9, Point16x9, Point16x9]
+  modes: [Point16x9, Point16x9, Point16x9, Point16x9]
+  result_ok: Point16x9
+  back: Point16x9
+  room_scroll_from: number
+  room_scroll_anchor: Point16x9
+}
+
+export type FullAutoConfig = {
+  room: FullAutoRoom
+  mode: FullAutoMode
+  /** 0 = until stopped. */
+  max_games: number
+  step_delay_ms: MsRange
+  result_delay_ms: MsRange
+  result_gap_ms: MsRange
+  result_presses: number
+  rest_between_games_ms: MsRange
+  queue_timeout_secs: number
+  game_stall_secs: number
+  coords: FullAutoCoords
+}
+
+export type FullAutoPhase =
+  | 'idle'
+  | 'waiting_lobby'
+  | 'queueing'
+  | 'queued'
+  | 'matched'
+  | 'in_game'
+  | 'results'
+  | 'resting'
+  | 'reloading'
+
+export type FullAutoStopReason = { code: string; message: string }
+
+export type FullAutoStatus = {
+  running: boolean
+  phase: FullAutoPhase
+  games_played: number
+  max_games: number
+  room: Exclude<FullAutoRoom, 'auto'> | null
+  mode: FullAutoMode
+  detail: string | null
+  stop_reason: FullAutoStopReason | null
+}
+
+/** Where a calibrated click is stored (serde adjacently tagged). */
+export type FullAutoCalibrationTarget =
+  | { kind: 'ranked' }
+  | { kind: 'room'; index: number }
+  | { kind: 'mode'; index: number }
+  | { kind: 'result_ok' }
+  | { kind: 'back' }
+  | { kind: 'scroll_anchor' }
 
 /** Optional cloud-inference settings for the built-in native bot.
  *  Mirrors `crate::config::NativeApiConfig`. */

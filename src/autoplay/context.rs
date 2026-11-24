@@ -47,6 +47,13 @@ pub struct AutoplayContext {
     /// proxy's client→server relay transmits them. The `in_game` gate is
     /// maintained by the Riichi City bridge. See `autoplay::inject`.
     pub inject: crate::autoplay::inject::SharedInjectBus,
+    /// Mahjong Soul lobby facts (login, rank, queue, game start/end), bumped
+    /// by every Majsoul bridge as it parses. Read by full-auto to verify its
+    /// lobby clicks (see `autoplay::lobby`).
+    pub lobby: crate::autoplay::lobby::SharedLobbyWatch,
+    /// Full-auto start/stop switch and published status
+    /// (see `autoplay::majsoul::full_auto`).
+    pub full_auto: Arc<crate::autoplay::majsoul::full_auto::FullAutoControl>,
 }
 
 impl AutoplayContext {

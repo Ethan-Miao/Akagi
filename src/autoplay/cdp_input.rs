@@ -101,6 +101,36 @@ pub async fn dispatch_click_shaped(
     Ok(())
 }
 
+/// Scroll the wheel at `(x, y)` (CSS pixels) in `ticks` notches of
+/// `delta_y` each, pausing `gap_ms` between them. The cursor is moved there
+/// first: Laya routes a wheel event to whatever list is under the pointer.
+pub async fn dispatch_wheel(
+    page: &Page,
+    x: f64,
+    y: f64,
+    delta_y: f64,
+    ticks: u32,
+    gap_ms: u32,
+) -> Result<()> {
+    let pt = Point::new(x, y);
+    page.move_mouse(pt).await.context("CDP move_mouse")?;
+    for i in 0..ticks {
+        let wheel = DispatchMouseEventParams::builder()
+            .r#type(DispatchMouseEventType::MouseWheel)
+            .x(pt.x)
+            .y(pt.y)
+            .delta_x(0.0)
+            .delta_y(delta_y)
+            .build()
+            .map_err(|e| anyhow!("build mouseWheel: {e}"))?;
+        page.execute(wheel).await.context("CDP mouseWheel")?;
+        if i + 1 < ticks && gap_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(gap_ms as u64)).await;
+        }
+    }
+    Ok(())
+}
+
 /// Read the game canvas's `getBoundingClientRect()` via `Runtime.evaluate`.
 ///
 /// Majsoul renders into the first `<canvas>` element on the page; Tenhou

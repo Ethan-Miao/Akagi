@@ -60,6 +60,12 @@
 //!   (a second opinion from the built-in bot on how obvious the move is to a
 //!   person). Neither can change the action.
 //!
+//! - [`lobby`] — Mahjong Soul lobby facts read off the wire (login, rank,
+//!   queue requests, found matches, game start/end), written by the bridge.
+//! - [`majsoul::full_auto`] — queue ranked matches, let the manager play
+//!   them, close the results, queue again; verified on the wire through
+//!   [`lobby`].
+//!
 //! Entry point: [`manager::run_autoplay_manager`].
 
 pub mod advisor;
@@ -68,6 +74,7 @@ pub mod cdp_input;
 pub mod context;
 pub mod delay;
 pub mod inject;
+pub mod lobby;
 pub mod majsoul;
 pub mod manager;
 pub mod platform;

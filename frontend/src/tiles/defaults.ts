@@ -17,6 +17,7 @@ export type TileId =
   | 'bot-action'
   | 'bot-show'
   | 'proxy-control'
+  | 'full-auto'
 
 export type Breakpoint = 'lg' | 'md' | 'sm' | 'xs'
 
@@ -41,6 +42,7 @@ export const ALL_TILES: TileId[] = [
   'bot-action',
   'bot-show',
   'proxy-control',
+  'full-auto',
 ]
 
 export const DEFAULT_HIDDEN: TileId[] = ['recommendations']
@@ -62,7 +64,8 @@ const LG_LAYOUT: LayoutItem[] = [
   { i: 'player-3',        x: 9, y: 11, w: 3,  h: 8, minW: 2, minH: 6 },
   { i: 'risk-chart',      x: 0, y: 19, w: 3,  h: 6, minW: 2, minH: 4 },
   { i: 'opponents',       x: 3, y: 19, w: 3,  h: 6, minW: 2, minH: 4 },
-  { i: 'proxy-control',   x: 6, y: 19, w: 6,  h: 6, minW: 2, minH: 2, maxH: 6 },
+  { i: 'proxy-control',   x: 6, y: 19, w: 3,  h: 6, minW: 2, minH: 2, maxH: 6 },
+  { i: 'full-auto',       x: 9, y: 19, w: 3,  h: 6, minW: 3, minH: 4, maxH: 10 },
   { i: 'board',           x: 0, y: 25, w: 6,  h: 14, minW: 4, minH: 8 },
   { i: 'recommendations', x: 6, y: 25, w: 6,  h: 8, minW: 2, minH: 4 },
 ]
@@ -81,9 +84,10 @@ const MD_LAYOUT: LayoutItem[] = [
   { i: 'player-1',        x: 4, y: 18, w: 2,  h: 8, minW: 2, minH: 6 },
   { i: 'player-2',        x: 6, y: 18, w: 2,  h: 8, minW: 2, minH: 6 },
   { i: 'player-3',        x: 8, y: 18, w: 2,  h: 8, minW: 2, minH: 6 },
-  { i: 'proxy-control',   x: 0, y: 26, w: 10, h: 4, minW: 2, minH: 2, maxH: 6 },
-  { i: 'board',           x: 0, y: 30, w: 6,  h: 14, minW: 4, minH: 8 },
-  { i: 'recommendations', x: 6, y: 30, w: 4,  h: 8, minW: 2, minH: 4 },
+  { i: 'proxy-control',   x: 0, y: 26, w: 5,  h: 6, minW: 2, minH: 2, maxH: 6 },
+  { i: 'full-auto',       x: 5, y: 26, w: 5,  h: 6, minW: 3, minH: 4, maxH: 10 },
+  { i: 'board',           x: 0, y: 32, w: 6,  h: 14, minW: 4, minH: 8 },
+  { i: 'recommendations', x: 6, y: 32, w: 4,  h: 8, minW: 2, minH: 4 },
 ]
 
 const SM_LAYOUT: LayoutItem[] = [
@@ -102,7 +106,8 @@ const SM_LAYOUT: LayoutItem[] = [
   { i: 'bot-responses',   x: 3, y: 38, w: 3, h: 5, minW: 2, minH: 3 },
   { i: 'bot-action',      x: 0, y: 43, w: 6, h: 3, minW: 3, minH: 2 },
   { i: 'bot-show',        x: 0, y: 46, w: 6, h: 5, minW: 2, minH: 3 },
-  { i: 'board',           x: 0, y: 51, w: 6, h: 16, minW: 4, minH: 8 },
+  { i: 'full-auto',       x: 0, y: 51, w: 6, h: 6, minW: 3, minH: 4, maxH: 10 },
+  { i: 'board',           x: 0, y: 57, w: 6, h: 16, minW: 4, minH: 8 },
 ]
 
 const XS_LAYOUT: LayoutItem[] = ALL_TILES.map((id, i) => ({
@@ -142,9 +147,10 @@ const LG_LAYOUT_3P: LayoutItem[] = [
   { i: 'proxy-control',   x: 0, y: 20, w: 4,  h: 5, minW: 2, minH: 2, maxH: 6 },
   { i: 'opponents',       x: 4, y: 20, w: 4,  h: 5, minW: 2, minH: 4 },
   { i: 'events',          x: 8, y: 20, w: 4,  h: 5, minW: 2, minH: 3 },
-  { i: 'recommendations', x: 0, y: 25, w: 6,  h: 8, minW: 2, minH: 4 },
-  { i: 'risk-chart',      x: 6, y: 25, w: 6,  h: 8, minW: 2, minH: 4 },
-  { i: 'board',           x: 0, y: 33, w: 6,  h: 14, minW: 4, minH: 8 },
+  { i: 'full-auto',       x: 0, y: 25, w: 4,  h: 6, minW: 3, minH: 4, maxH: 10 },
+  { i: 'recommendations', x: 0, y: 31, w: 6,  h: 8, minW: 2, minH: 4 },
+  { i: 'risk-chart',      x: 6, y: 31, w: 6,  h: 8, minW: 2, minH: 4 },
+  { i: 'board',           x: 0, y: 39, w: 6,  h: 14, minW: 4, minH: 8 },
 ]
 
 const MD_LAYOUT_3P: LayoutItem[] = [
@@ -160,9 +166,10 @@ const MD_LAYOUT_3P: LayoutItem[] = [
   { i: 'proxy-control',   x: 0, y: 20, w: 3,  h: 5, minW: 2, minH: 2, maxH: 6 },
   { i: 'opponents',       x: 3, y: 20, w: 4,  h: 5, minW: 2, minH: 4 },
   { i: 'events',          x: 7, y: 20, w: 3,  h: 5, minW: 2, minH: 3 },
-  { i: 'recommendations', x: 0, y: 25, w: 5,  h: 8, minW: 2, minH: 4 },
+  { i: 'full-auto',       x: 0, y: 25, w: 5,  h: 6, minW: 3, minH: 4, maxH: 10 },
+  { i: 'recommendations', x: 0, y: 31, w: 5,  h: 8, minW: 2, minH: 4 },
   { i: 'risk-chart',      x: 5, y: 25, w: 5,  h: 8, minW: 2, minH: 4 },
-  { i: 'board',           x: 0, y: 33, w: 6,  h: 14, minW: 4, minH: 8 },
+  { i: 'board',           x: 0, y: 39, w: 6,  h: 14, minW: 4, minH: 8 },
 ]
 
 const SM_LAYOUT_3P: LayoutItem[] = [
@@ -179,8 +186,9 @@ const SM_LAYOUT_3P: LayoutItem[] = [
   { i: 'bot-responses',   x: 3, y: 38, w: 3, h: 5, minW: 2, minH: 3 },
   { i: 'bot-action',      x: 0, y: 43, w: 6, h: 3, minW: 3, minH: 2 },
   { i: 'bot-show',        x: 0, y: 46, w: 6, h: 5, minW: 2, minH: 3 },
+  { i: 'full-auto',       x: 0, y: 51, w: 6, h: 6, minW: 3, minH: 4, maxH: 10 },
   { i: 'recommendations', x: 0, y: 10, w: 6, h: 8, minW: 2, minH: 4 },
-  { i: 'board',           x: 0, y: 51, w: 6, h: 16, minW: 4, minH: 8 },
+  { i: 'board',           x: 0, y: 57, w: 6, h: 16, minW: 4, minH: 8 },
 ]
 
 const ALL_TILES_3P: TileId[] = ALL_TILES.filter((id) => id !== 'player-3')
@@ -222,4 +230,5 @@ export const TILE_TITLES: Record<TileId, string> = {
   'bot-action':      'Bot Action',
   'bot-show':        'Bot Display',
   'proxy-control':   'Proxy',
+  'full-auto':       'Full Auto',
 }

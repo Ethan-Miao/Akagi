@@ -127,6 +127,7 @@ impl CaptureBackend for ChromiumBackend {
                 riichi_inject: None,
                 notify: None,
                 tenhou_journal: None,
+                lobby_watch: Some(a.lobby.clone()),
             })
             .unwrap_or_default();
         hooks.notify = Some(ctx.notify_bus.clone());

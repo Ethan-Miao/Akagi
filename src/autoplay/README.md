@@ -34,6 +34,8 @@ bot answers is the most obvious tell there is.
 | `table.rs` | Two facts read off the table for a discard, for delay scripts: whether the tile is *loose* in the hand (no second copy, nothing of its suit within two — by its place, not its kind) and whether it is *safe* against every riichi (each has discarded it). |
 | `context.rs` | `AutoplayContext` — shared slots between the capture backend, the bridge and the manager (`page`, `canvas_rect`, `time_budget`, `input_watch`, `tenhou_state`). |
 | `cdp_input.rs` | chromiumoxide wrappers: hover → press → hold → release click sequence (optionally with a mid-press cursor jiggle for retries), canvas rect query, and the Tenhou route's DOM helpers — action-button selectors, the readiness probe, and the call into the injected discard handler. |
+| `lobby.rs` | Majsoul only. `LobbyWatch` — lobby and game-socket facts read off the wire for full-auto: logins (and the 4p/3p rank they carry), `startUnifiedMatch` request/response, found / dropped matches, `authGame`, game end. Written by every Majsoul bridge (lobby and game sockets are separate flows), each fact with a sequence number so full-auto can take a ticket before a click and ask afterwards whether it landed. |
+| `majsoul/full_auto.rs` | Majsoul only. Full-auto: Ranked → room → mode, verified by the `startUnifiedMatch` it must produce; wait for the match; leave the game to the manager; close the result screens; rest; repeat. Misses are retried, then the page is reloaded; a page that will not recover stops the run with a reason code the dashboard translates. Start/stop is runtime state (`FullAutoControl` in the context), never persisted. Also holds lobby-button calibration (`record_next_click`). |
 | `verify.rs` | Majsoul only. `InputWatch` — counts the client's own uplink input commands (`inputOperation` / `inputChiPengGang`, bumped by the Majsoul bridge). The manager takes a ticket before pressing; if the count never moves, the click was swallowed and the plan is pressed again (bounded by `click_retries`, gated on the decision window still being live). Repeated dead decisions trigger a page reload (`reload_after_failures`), which reconnects into the hand via the bridge's `GameRestore` path. |
 
 ## What arrives on the `BotResponseBus`
@@ -169,6 +171,40 @@ named.
   chi where both the plain and red copy are held, two kans at once. The
   mapping is read off the client's builder rather than guessed, but no live
   hand has offered one yet.
+
+## Full-auto (`majsoul/full_auto.rs`)
+
+Runs as its own task (spawned at startup, idle until `full_auto_start`).
+It never acts inside a game: from `authGame` to the game's end the hand is
+the manager's, and full-auto only watches for a stall (no game traffic for
+`game_stall_secs`), which it answers with a page reload — the bridge's
+`GameRestore` path reconnects into the hand.
+
+In the lobby, every press sequence is judged by the wire, not by the
+screen: the mode press must be followed by `.lq.Lobby.startUnifiedMatch`
+(`lobby.rs`) within a few seconds. A miss most often means a result screen
+or popup is still up, so the next attempt is preceded by a press on the
+result-screen OK; two misses in a row reload the page; three reloads
+without a queue stop the run (`page_dead`). A refused request
+(`Error.code` on the response) stops it at once (`queue_rejected`).
+
+| Phase | Waits for | Then |
+|---|---|---|
+| `waiting_lobby` | the page handle; a login response (one reload if none) | queue |
+| `queueing` | `startUnifiedMatch` up, then its response | `queued` |
+| `queued` | `NotifyMatchGameStart` / `authGame` (or `queue_timeout_secs` → reload) | `matched` / `in_game` |
+| `in_game` | the game's end (`NotifyGameEndResult` / `NotifyGameTerminate`) | `results` |
+| `results` | `result_presses` presses on the shared OK button | `resting` → queue |
+
+Coordinates (`FullAutoCoords`, 16:9 units like the in-game tables) are
+config, with built-in defaults; the dashboard's calibration arms a one-shot
+capture-phase `pointerdown` listener in the page and stores the user's next
+real click on the chosen target. Jade and Throne sit below the fold of the
+room list, so they are pressed after a wheel scroll at
+`room_scroll_anchor`. `auto` room picks the highest room the rank from the
+last login admits (`lobby::best_room_for`). The mode id the queue went out
+with is compared against `lobby::expected_mode_id` and only *logged* on a
+mismatch — a hint that the coordinates need calibrating.
 
 ## The delay model (`delay/`)
 

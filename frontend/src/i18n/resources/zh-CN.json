@@ -332,7 +332,8 @@
     "proxy_control": "代理",
     "dora": "宝牌",
     "phase": "阶段",
-    "hide_x": "隐藏 {{title}}"
+    "hide_x": "隐藏 {{title}}",
+    "full_auto": "全自动"
   },
   "common": {
     "live": "实时",
@@ -962,5 +963,75 @@
   "overlay": {
     "close": "关闭悬浮窗",
     "empty": "等待 AI 建议…"
+  },
+  "full_auto": {
+    "games": "已打",
+    "max_games": "局数（∞）",
+    "max_games_hint": "打满这么多局后停止。留空 = 一直打到手动停止。",
+    "save_failed": "全自动设置保存失败",
+    "calibration": "校准按钮位置",
+    "calib_hint": "选一个按钮，点「记录」，然后在 30 秒内到游戏窗口里点一下那个按钮。记录模式按钮会真的开始匹配。",
+    "calib_record": "记录",
+    "calib_waiting": "请点击…",
+    "calib_recording": "请在游戏窗口里点击该按钮",
+    "calib_saved": "位置已保存",
+    "calib_failed": "校准失败",
+    "coords_reset": "恢复默认位置",
+    "phase": {
+      "idle": "空闲",
+      "waiting_lobby": "等待大厅",
+      "queueing": "正在排队",
+      "queued": "匹配中",
+      "matched": "匹配成功",
+      "in_game": "对局中",
+      "results": "关闭结算",
+      "resting": "休息中",
+      "reloading": "刷新页面"
+    },
+    "room": {
+      "auto": "房间：自动",
+      "bronze": "铜之间",
+      "silver": "银之间",
+      "gold": "金之间",
+      "jade": "玉之间",
+      "throne": "王座之间"
+    },
+    "mode": {
+      "east4": "四人东",
+      "south4": "四人南",
+      "east3": "三人东",
+      "south3": "三人南"
+    },
+    "target": {
+      "ranked": "段位场",
+      "room_0": "铜之间",
+      "room_1": "银之间",
+      "room_2": "金之间",
+      "room_3": "玉之间（滚动后）",
+      "room_4": "王座之间（滚动后）",
+      "scroll_anchor": "房间列表（滚动位置）",
+      "mode_0": "四人东",
+      "mode_1": "四人南",
+      "mode_2": "三人东",
+      "mode_3": "三人南",
+      "result_ok": "结算画面「确认」",
+      "back": "返回（列表顶部）"
+    },
+    "stop": {
+      "user": "已停止。",
+      "batch_done": "已打完设定局数。",
+      "wrong_platform": "全自动只支持雀魂。",
+      "needs_chromium": "需要 Chromium 捕获模式。",
+      "autoplay_off": "请先开启自动打牌。",
+      "bot_off": "请先开启 Bot。",
+      "no_page": "游戏页面没有打开。",
+      "no_login": "没有看到登录——请在游戏窗口登录。",
+      "rank_unknown": "段位未知——请手动选房间。",
+      "room_not_admitted": "当前段位进不了这个房间。",
+      "queue_rejected": "服务器拒绝了匹配请求。",
+      "page_dead": "刷新后页面仍未恢复。",
+      "no_canvas": "找不到游戏画面。",
+      "calibrate": "房间按钮点开了别的房间——请校准房间位置。"
+    }
   }
 }

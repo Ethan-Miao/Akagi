@@ -35,6 +35,7 @@ const TILE_TITLE_KEYS: Record<TileId, string> = {
   'bot-action':      'tile.bot_action',
   'bot-show':        'tile.bot_show',
   'proxy-control':   'tile.proxy_control',
+  'full-auto':       'tile.full_auto',
 }
 
 export function AddTileMenu({ bp }: { bp: Breakpoint }) {

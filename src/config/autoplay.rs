@@ -41,6 +41,192 @@ pub struct AutoplayConfig {
     pub majsoul: MajsoulAutoplayConfig,
     /// Pre-click delay model (platform-agnostic). See `autoplay::delay`.
     pub delay: DelayModelConfig,
+    /// Mahjong Soul full-auto: queue ranked matches, let autoplay play
+    /// them, close the results and queue again. Only the *settings* live
+    /// here; whether it is running is runtime state, started and stopped
+    /// from the dashboard (`full_auto_start` / `full_auto_stop`), so a
+    /// restart never resumes queueing on its own. See
+    /// `autoplay::majsoul::full_auto`.
+    pub full_auto: FullAutoConfig,
+}
+
+/// Which ranked room full-auto queues in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FullAutoRoom {
+    /// The highest room the account's rank admits, read from the login
+    /// response (4p rank for 4p modes, 3p rank for 3p modes).
+    #[default]
+    Auto,
+    Bronze,
+    Silver,
+    Gold,
+    Jade,
+    Throne,
+}
+
+impl FullAutoRoom {
+    /// Index into [`FullAutoCoords::rooms`] (Bronze = 0 … Throne = 4).
+    /// `None` for `Auto`, which has to be resolved against a rank first.
+    pub fn index(self) -> Option<usize> {
+        match self {
+            Self::Auto => None,
+            Self::Bronze => Some(0),
+            Self::Silver => Some(1),
+            Self::Gold => Some(2),
+            Self::Jade => Some(3),
+            Self::Throne => Some(4),
+        }
+    }
+
+    pub fn from_index(i: usize) -> Self {
+        match i {
+            0 => Self::Bronze,
+            1 => Self::Silver,
+            2 => Self::Gold,
+            3 => Self::Jade,
+            _ => Self::Throne,
+        }
+    }
+}
+
+/// Which ranked match format full-auto queues for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FullAutoMode {
+    East4,
+    #[default]
+    South4,
+    East3,
+    South3,
+}
+
+impl FullAutoMode {
+    /// Index into [`FullAutoCoords::modes`], which is the order the client
+    /// lists them in a room: 4p East, 4p South, 3p East, 3p South.
+    pub fn index(self) -> usize {
+        match self {
+            Self::East4 => 0,
+            Self::South4 => 1,
+            Self::East3 => 2,
+            Self::South3 => 3,
+        }
+    }
+
+    pub fn is_sanma(self) -> bool {
+        matches!(self, Self::East3 | Self::South3)
+    }
+}
+
+/// Where full-auto clicks, in the same 16:9-normalised coordinates as the
+/// in-game tables (`x` in `0..16`, `y` in `0..9` of the game canvas).
+///
+/// The defaults are measured on the web client's lobby (a 1175×660 canvas,
+/// Nov 2026; centres of each button, the list entries at the list's own
+/// scroll positions). Anything here can
+/// be overridden in `config.toml` or recorded from a real click with the
+/// dashboard's calibration button, which is the fix when a client update
+/// moves a button.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FullAutoCoords {
+    /// The lobby's "Ranked Match" entry.
+    pub ranked: [f64; 2],
+    /// Room entries, Bronze → Throne, as they sit once the list is in the
+    /// position the click needs: Jade and Throne only after the list has
+    /// been scrolled down (see `room_scroll_from`).
+    pub rooms: [[f64; 2]; 5],
+    /// Mode entries inside a room: 4p East, 4p South, 3p East, 3p South.
+    pub modes: [[f64; 2]; 4],
+    /// The confirm button the result screens share (final standings, rank
+    /// change). Pressed after a game until the lobby is back. Only ever
+    /// pressed on result screens: in the lobby the same spot is near the
+    /// bottom menu (shop).
+    pub result_ok: [f64; 2],
+    /// The "Back" button at the top of the room list and of a room's mode
+    /// list. Pressing it on the lobby's front page is harmless: it falls on
+    /// the Ranked sign, which opens the room list the sequence wants anyway.
+    pub back: [f64; 2],
+    /// Rooms from this index on need the room list scrolled down first
+    /// (3 = Jade and Throne).
+    pub room_scroll_from: usize,
+    /// Where the cursor sits while it scrolls the room list.
+    pub room_scroll_anchor: [f64; 2],
+}
+
+impl Default for FullAutoCoords {
+    fn default() -> Self {
+        Self {
+            ranked: [11.4, 2.65],
+            rooms: [
+                [11.64, 3.38],
+                [11.64, 4.75],
+                [11.64, 6.11],
+                // Jade and Throne after the list is scrolled to its end.
+                [11.64, 5.3],
+                [11.64, 6.7],
+            ],
+            // 3p South is half below the list's edge; aim at what shows.
+            modes: [[11.64, 3.31], [11.64, 4.71], [11.64, 6.07], [11.64, 7.22]],
+            result_ok: [14.35, 8.12],
+            back: [10.21, 2.22],
+            room_scroll_from: 3,
+            room_scroll_anchor: [11.64, 4.75],
+        }
+    }
+}
+
+const FULL_AUTO_STEP_DELAY: MsRange = MsRange::new(700, 1600);
+const FULL_AUTO_RESULT_DELAY: MsRange = MsRange::new(3500, 7000);
+const FULL_AUTO_RESULT_GAP: MsRange = MsRange::new(1800, 3500);
+const FULL_AUTO_REST: MsRange = MsRange::new(2000, 9000);
+
+/// Full-auto settings. See [`AutoplayConfig::full_auto`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FullAutoConfig {
+    pub room: FullAutoRoom,
+    pub mode: FullAutoMode,
+    /// Stop after this many finished games. `0` = until stopped.
+    pub max_games: u32,
+    /// Pause between the lobby clicks of one queue attempt (menu → room →
+    /// mode), drawn per step. The menus animate in; a click that arrives
+    /// before the entry exists is lost.
+    pub step_delay_ms: MsRange,
+    /// Wait after the game-end notice before the first result-screen press.
+    pub result_delay_ms: MsRange,
+    /// Gap between result-screen presses.
+    pub result_gap_ms: MsRange,
+    /// How many result-screen presses to make before trying to queue.
+    pub result_presses: u32,
+    /// Rest in the lobby before queueing the next game.
+    pub rest_between_games_ms: MsRange,
+    /// A queue with no match after this long is treated as stuck and the
+    /// page is reloaded, seconds.
+    pub queue_timeout_secs: u32,
+    /// In a game, no mjai event for this long means the page is stuck; it
+    /// is reloaded (the bridge's `GameRestore` path reconnects into the
+    /// hand), seconds.
+    pub game_stall_secs: u32,
+    pub coords: FullAutoCoords,
+}
+
+impl Default for FullAutoConfig {
+    fn default() -> Self {
+        Self {
+            room: FullAutoRoom::Auto,
+            mode: FullAutoMode::South4,
+            max_games: 0,
+            step_delay_ms: FULL_AUTO_STEP_DELAY,
+            result_delay_ms: FULL_AUTO_RESULT_DELAY,
+            result_gap_ms: FULL_AUTO_RESULT_GAP,
+            result_presses: 4,
+            rest_between_games_ms: FULL_AUTO_REST,
+            queue_timeout_secs: 600,
+            game_stall_secs: 300,
+            coords: FullAutoCoords::default(),
+        }
+    }
 }
 
 /// Which delay policy drives autoplay. Exactly one is active.
@@ -347,6 +533,28 @@ mod tests {
         assert_eq!(cfg.delay.min_delay_ms, MIN_DELAY);
         assert_eq!(cfg.delay.min_button_delay_ms, MsRange::fixed(2000));
         assert_eq!(cfg.majsoul.verify_input_ms, VERIFY_INPUT, "absent: default");
+    }
+
+    /// A config from before full-auto existed gets its defaults; a partial
+    /// section keeps what it says, including one overridden coordinate.
+    #[test]
+    fn full_auto_section_defaults_and_overrides() {
+        let cfg: AutoplayConfig = toml::from_str("enabled = true").unwrap();
+        assert_eq!(cfg.full_auto, FullAutoConfig::default());
+        let cfg: AutoplayConfig = toml::from_str(
+            "[full_auto]\nroom = \"jade\"\nmode = \"east3\"\nmax_games = 5\n\
+             [full_auto.coords]\nranked = [11.0, 3.0]\n",
+        )
+        .unwrap();
+        let fa = cfg.full_auto;
+        assert_eq!(fa.room, FullAutoRoom::Jade);
+        assert_eq!(fa.mode, FullAutoMode::East3);
+        assert!(fa.mode.is_sanma());
+        assert_eq!(fa.max_games, 5);
+        assert_eq!(fa.coords.ranked, [11.0, 3.0]);
+        assert_eq!(fa.coords.modes, FullAutoCoords::default().modes);
+        assert_eq!(fa.room.index(), Some(3));
+        assert_eq!(FullAutoRoom::Auto.index(), None);
     }
 
     /// A decision's settings hold one drawn value per range, inside it.

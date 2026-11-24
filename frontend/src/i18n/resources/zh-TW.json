@@ -332,7 +332,8 @@
     "proxy_control": "代理",
     "dora": "寶牌",
     "phase": "階段",
-    "hide_x": "隱藏 {{title}}"
+    "hide_x": "隱藏 {{title}}",
+    "full_auto": "全自動"
   },
   "common": {
     "live": "即時",
@@ -962,5 +963,75 @@
   "overlay": {
     "close": "關閉懸浮視窗",
     "empty": "等待 AI 建議…"
+  },
+  "full_auto": {
+    "games": "已打",
+    "max_games": "局數（∞）",
+    "max_games_hint": "打滿這麼多局後停止。留空 = 一直打到手動停止。",
+    "save_failed": "全自動設定儲存失敗",
+    "calibration": "校準按鈕位置",
+    "calib_hint": "選一個按鈕，按「記錄」，然後在 30 秒內到遊戲視窗裡點一下那個按鈕。記錄模式按鈕會真的開始匹配。",
+    "calib_record": "記錄",
+    "calib_waiting": "請點擊…",
+    "calib_recording": "請在遊戲視窗裡點擊該按鈕",
+    "calib_saved": "位置已儲存",
+    "calib_failed": "校準失敗",
+    "coords_reset": "恢復預設位置",
+    "phase": {
+      "idle": "閒置",
+      "waiting_lobby": "等待大廳",
+      "queueing": "正在排隊",
+      "queued": "匹配中",
+      "matched": "匹配成功",
+      "in_game": "對局中",
+      "results": "關閉結算",
+      "resting": "休息中",
+      "reloading": "重新整理頁面"
+    },
+    "room": {
+      "auto": "房間：自動",
+      "bronze": "銅之間",
+      "silver": "銀之間",
+      "gold": "金之間",
+      "jade": "玉之間",
+      "throne": "王座之間"
+    },
+    "mode": {
+      "east4": "四人東",
+      "south4": "四人南",
+      "east3": "三人東",
+      "south3": "三人南"
+    },
+    "target": {
+      "ranked": "段位場",
+      "room_0": "銅之間",
+      "room_1": "銀之間",
+      "room_2": "金之間",
+      "room_3": "玉之間（捲動後）",
+      "room_4": "王座之間（捲動後）",
+      "scroll_anchor": "房間列表（捲動位置）",
+      "mode_0": "四人東",
+      "mode_1": "四人南",
+      "mode_2": "三人東",
+      "mode_3": "三人南",
+      "result_ok": "結算畫面「確認」",
+      "back": "返回（列表頂部）"
+    },
+    "stop": {
+      "user": "已停止。",
+      "batch_done": "已打完設定局數。",
+      "wrong_platform": "全自動只支援雀魂。",
+      "needs_chromium": "需要 Chromium 擷取模式。",
+      "autoplay_off": "請先開啟自動打牌。",
+      "bot_off": "請先開啟 Bot。",
+      "no_page": "遊戲頁面沒有開啟。",
+      "no_login": "沒有看到登入——請在遊戲視窗登入。",
+      "rank_unknown": "段位未知——請手動選房間。",
+      "room_not_admitted": "目前段位進不了這個房間。",
+      "queue_rejected": "伺服器拒絕了匹配請求。",
+      "page_dead": "重新整理後頁面仍未恢復。",
+      "no_canvas": "找不到遊戲畫面。",
+      "calibrate": "房間按鈕點開了別的房間——請校準房間位置。"
+    }
   }
 }

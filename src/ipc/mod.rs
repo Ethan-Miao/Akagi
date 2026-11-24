@@ -35,6 +35,7 @@
 //! | `analysis-result`  | `analysis::AnalysisResult`    |
 //! | `history-recorded` | `schema::HistoryEvent`        |
 //! | `overlay-config`   | `config::OverlayConfig`       |
+//! | `full-auto-status` | `autoplay::majsoul::full_auto::FullAutoStatus` |
 //!
 //! All of the above are broadcast to every webview, which is what lets the
 //! [`overlay`] window render suggestions without any dedicated plumbing.
@@ -80,6 +81,7 @@ fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
     );
 
     // Status buses: forward AND snapshot into AppState.
+    spawn_full_auto_status_forwarder(app.clone(), state.clone());
     spawn_bot_status_forwarder(app.clone(), state.clone());
     spawn_capture_status_forwarder(app, state);
 }
@@ -103,6 +105,24 @@ where
                     warn!("ipc forwarder {event} lagged by {n}");
                 }
                 Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
+}
+
+/// Full-auto status lives in a `watch` (latest value only — the frontend
+/// never needs the intermediate phases it missed), emitted as
+/// `full-auto-status`. A fresh frontend asks `full_auto_status`.
+fn spawn_full_auto_status_forwarder<R: Runtime>(app: AppHandle<R>, state: AppState) {
+    let mut rx = state.autoplay_context.full_auto.subscribe_status();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if rx.changed().await.is_err() {
+                return;
+            }
+            let s = rx.borrow_and_update().clone();
+            if let Err(e) = app.emit("full-auto-status", &s) {
+                warn!("ipc emit full-auto-status failed: {e}");
             }
         }
     });

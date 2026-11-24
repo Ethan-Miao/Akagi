@@ -313,6 +313,23 @@ pub fn run() {
                     });
                 }
 
+                // Full-auto runner: idles until started from the dashboard,
+                // and checks autoplay/bot/capture preconditions itself at
+                // each start, so it is spawned whatever the config says.
+                {
+                    let cfg_for_fa = state.config.clone();
+                    let ctx_for_fa = state.autoplay_context.clone();
+                    let notify_for_fa = notify_bus.clone();
+                    tauri::async_runtime::spawn(async move {
+                        autoplay::majsoul::full_auto::run_full_auto(
+                            cfg_for_fa,
+                            ctx_for_fa,
+                            notify_for_fa,
+                        )
+                        .await;
+                    });
+                }
+
                 // Inspector mjai-bus subscriber: every event the bridges
                 // emit is mirrored into the inspector timeline so the
                 // user sees frames → mjai events → bot reactions in one

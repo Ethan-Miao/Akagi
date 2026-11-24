@@ -332,7 +332,8 @@
     "proxy_control": "Proxy",
     "dora": "Dora",
     "phase": "Phase",
-    "hide_x": "Hide {{title}}"
+    "hide_x": "Hide {{title}}",
+    "full_auto": "Full Auto"
   },
   "common": {
     "live": "LIVE",
@@ -962,5 +963,75 @@
   "overlay": {
     "close": "Close overlay",
     "empty": "Waiting for the bot…"
+  },
+  "full_auto": {
+    "games": "Games",
+    "max_games": "Games (∞)",
+    "max_games_hint": "Stop after this many games. Empty = until stopped.",
+    "save_failed": "Could not save the full-auto settings",
+    "calibration": "Calibrate buttons",
+    "calib_hint": "Pick a button, press Record, then click that button in the game window within 30 s. Recording a mode button starts a real queue.",
+    "calib_record": "Record",
+    "calib_waiting": "Click it now…",
+    "calib_recording": "Click the button in the game window",
+    "calib_saved": "Position saved",
+    "calib_failed": "Calibration failed",
+    "coords_reset": "Reset positions to defaults",
+    "phase": {
+      "idle": "Idle",
+      "waiting_lobby": "Waiting for the lobby",
+      "queueing": "Queueing",
+      "queued": "In queue",
+      "matched": "Match found",
+      "in_game": "Playing",
+      "results": "Closing results",
+      "resting": "Resting",
+      "reloading": "Reloading page"
+    },
+    "room": {
+      "auto": "Room: auto",
+      "bronze": "Bronze",
+      "silver": "Silver",
+      "gold": "Gold",
+      "jade": "Jade",
+      "throne": "Throne"
+    },
+    "mode": {
+      "east4": "4p East",
+      "south4": "4p South",
+      "east3": "3p East",
+      "south3": "3p South"
+    },
+    "target": {
+      "ranked": "Ranked Match",
+      "room_0": "Bronze Room",
+      "room_1": "Silver Room",
+      "room_2": "Gold Room",
+      "room_3": "Jade Room (after scrolling)",
+      "room_4": "Throne Room (after scrolling)",
+      "scroll_anchor": "Room list (scroll point)",
+      "mode_0": "4p East",
+      "mode_1": "4p South",
+      "mode_2": "3p East",
+      "mode_3": "3p South",
+      "result_ok": "Result screen OK",
+      "back": "Back (top of the lists)"
+    },
+    "stop": {
+      "user": "Stopped.",
+      "batch_done": "Finished the batch.",
+      "wrong_platform": "Full auto works on Mahjong Soul only.",
+      "needs_chromium": "Needs Chromium capture mode.",
+      "autoplay_off": "Turn on Autoplay first.",
+      "bot_off": "Turn on the bot first.",
+      "no_page": "The game page is not open.",
+      "no_login": "No login seen — log in in the game window.",
+      "rank_unknown": "Rank unknown — pick a room explicitly.",
+      "room_not_admitted": "Your rank cannot enter that room.",
+      "queue_rejected": "The server refused the queue request.",
+      "page_dead": "The page did not recover after reloading.",
+      "no_canvas": "Could not find the game canvas.",
+      "calibrate": "A room button opened the wrong room — calibrate the room positions."
+    }
   }
 }

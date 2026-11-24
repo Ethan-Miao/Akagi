@@ -117,6 +117,9 @@ pub struct BridgeHooks {
     /// flow a reconnect opens carries on from (see `tenhou::journal`). One
     /// per capture run, shared by all its flows.
     pub tenhou_journal: Option<tenhou::journal::SharedJournal>,
+    /// Majsoul: lobby facts for full-auto — login, rank, queue requests,
+    /// game start/end (see `autoplay::lobby`).
+    pub lobby_watch: Option<crate::autoplay::lobby::SharedLobbyWatch>,
 }
 
 /// Construct a bridge for the given platform.
@@ -135,7 +138,8 @@ pub fn for_platform(
         crate::config::Platform::Majsoul => Box::new(
             MajsoulBridge::new(flow_log, session)
                 .with_time_budget(hooks.time_budget)
-                .with_input_watch(hooks.input_watch),
+                .with_input_watch(hooks.input_watch)
+                .with_lobby_watch(hooks.lobby_watch),
         ),
         crate::config::Platform::Tenhou => Box::new(
             TenhouBridge::new(flow_log, session)

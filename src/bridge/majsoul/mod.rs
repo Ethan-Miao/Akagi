@@ -196,6 +196,8 @@ pub struct MajsoulBridge {
     /// autoplay manager for click verification (see `autoplay::verify`).
     /// `None` when the autoplay context isn't wired (MITM path, tests).
     input_watch: Option<crate::autoplay::verify::SharedInputWatch>,
+    /// Lobby facts for full-auto (see `autoplay::lobby`).
+    lobby_watch: Option<crate::autoplay::lobby::SharedLobbyWatch>,
 }
 
 impl MajsoulBridge {
@@ -219,6 +221,7 @@ impl MajsoulBridge {
             replaying: false,
             restore_budget: None,
             input_watch: None,
+            lobby_watch: None,
         }
     }
 
@@ -236,6 +239,16 @@ impl MajsoulBridge {
         watch: Option<crate::autoplay::verify::SharedInputWatch>,
     ) -> Self {
         self.input_watch = watch;
+        self
+    }
+
+    /// Install the shared lobby-facts slot (builder-style; used by
+    /// `bridge::for_platform`).
+    pub fn with_lobby_watch(
+        mut self,
+        watch: Option<crate::autoplay::lobby::SharedLobbyWatch>,
+    ) -> Self {
+        self.lobby_watch = watch;
         self
     }
 
@@ -281,6 +294,19 @@ impl MajsoulBridge {
 
     /// Translate `msg` into 0+ mjai events, mutating bridge state as needed.
     fn dispatch(&mut self, msg: &ParsedMessage) -> Vec<MjaiEvent> {
+        // Lobby facts first, from every frame: full-auto verifies its lobby
+        // clicks by them. Replays never reach here (they go through
+        // `handle_action_prototype` directly), so nothing is counted twice.
+        if let Some(watch) = &self.lobby_watch {
+            let frame = match msg.msg_type {
+                MessageType::Request => crate::autoplay::lobby::LobbyFrame::Request,
+                MessageType::Response => crate::autoplay::lobby::LobbyFrame::Response,
+                MessageType::Notify => crate::autoplay::lobby::LobbyFrame::Notify,
+            };
+            if let Ok(mut w) = watch.write() {
+                w.observe(frame, msg.method_name.as_ref(), &msg.payload);
+            }
+        }
         match (&msg.msg_type, msg.method_name.as_ref()) {
             (MessageType::Request, METHOD_AUTH_GAME) => {
                 self.account_id = msg.payload.get("account_id").and_then(JsonValue::as_u64);

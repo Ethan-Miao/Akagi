@@ -332,7 +332,8 @@
     "proxy_control": "プロキシ",
     "dora": "ドラ",
     "phase": "フェーズ",
-    "hide_x": "{{title}} を非表示"
+    "hide_x": "{{title}} を非表示",
+    "full_auto": "全自動"
   },
   "common": {
     "live": "ライブ",
@@ -962,5 +963,75 @@
   "overlay": {
     "close": "オーバーレイを閉じる",
     "empty": "AI の判断を待っています…"
+  },
+  "full_auto": {
+    "games": "対局数",
+    "max_games": "対局数（∞）",
+    "max_games_hint": "この数だけ打ったら停止。空欄 = 手動で止めるまで。",
+    "save_failed": "全自動の設定を保存できませんでした",
+    "calibration": "ボタン位置の調整",
+    "calib_hint": "ボタンを選んで「記録」を押し、30 秒以内にゲーム画面でそのボタンをクリックしてください。モードのボタンを記録すると実際にマッチングが始まります。",
+    "calib_record": "記録",
+    "calib_waiting": "クリックしてください…",
+    "calib_recording": "ゲーム画面でボタンをクリックしてください",
+    "calib_saved": "位置を保存しました",
+    "calib_failed": "調整に失敗しました",
+    "coords_reset": "位置を初期値に戻す",
+    "phase": {
+      "idle": "待機",
+      "waiting_lobby": "ロビー待ち",
+      "queueing": "予約中",
+      "queued": "マッチング中",
+      "matched": "マッチ成立",
+      "in_game": "対局中",
+      "results": "結果画面を閉じる",
+      "resting": "休憩中",
+      "reloading": "ページ再読み込み"
+    },
+    "room": {
+      "auto": "部屋：自動",
+      "bronze": "銅の間",
+      "silver": "銀の間",
+      "gold": "金の間",
+      "jade": "玉の間",
+      "throne": "王座の間"
+    },
+    "mode": {
+      "east4": "四人東",
+      "south4": "四人南",
+      "east3": "三人東",
+      "south3": "三人南"
+    },
+    "target": {
+      "ranked": "段位戦",
+      "room_0": "銅の間",
+      "room_1": "銀の間",
+      "room_2": "金の間",
+      "room_3": "玉の間（スクロール後）",
+      "room_4": "王座の間（スクロール後）",
+      "scroll_anchor": "部屋リスト（スクロール位置）",
+      "mode_0": "四人東",
+      "mode_1": "四人南",
+      "mode_2": "三人東",
+      "mode_3": "三人南",
+      "result_ok": "結果画面の確認",
+      "back": "戻る（リスト上部）"
+    },
+    "stop": {
+      "user": "停止しました。",
+      "batch_done": "指定の対局数を打ち終えました。",
+      "wrong_platform": "全自動は雀魂専用です。",
+      "needs_chromium": "Chromium キャプチャが必要です。",
+      "autoplay_off": "先にオートプレイを有効にしてください。",
+      "bot_off": "先に Bot を有効にしてください。",
+      "no_page": "ゲームページが開いていません。",
+      "no_login": "ログインが確認できません。ゲーム画面でログインしてください。",
+      "rank_unknown": "段位が不明です。部屋を指定してください。",
+      "room_not_admitted": "現在の段位ではその部屋に入れません。",
+      "queue_rejected": "サーバーが予約を拒否しました。",
+      "page_dead": "再読み込みしても復旧しませんでした。",
+      "no_canvas": "ゲーム画面が見つかりません。",
+      "calibrate": "部屋ボタンで別の部屋が開きました。部屋の位置を調整してください。"
+    }
   }
 }
