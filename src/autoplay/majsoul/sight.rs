@@ -67,8 +67,10 @@ pub fn gold_share(px: &Pixels) -> f64 {
     }
     let gold = px
         .rgb
-        .chunks_exact(3)
-        .filter(|p| is_gold(p[0], p[1], p[2]))
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .filter(|&&[r, g, b]| is_gold(r, g, b))
         .count();
     gold as f64 / n as f64
 }
