@@ -20,6 +20,7 @@ const VERIFY_INPUT: MsRange = MsRange::new(300, 500);
 const DEALER_FIRST_DISCARD_EXTRA: MsRange = MsRange::new(2000, 3000);
 const ROUND_CONFIRM_DELAY: MsRange = MsRange::new(3500, 6500);
 const ROUND_CONFIRM_GAP: MsRange = MsRange::new(1800, 3200);
+const OK_REACTION: MsRange = MsRange::new(450, 1400);
 upgraded_range!(upgrade_min_delay, 1000, MIN_DELAY);
 upgraded_range!(upgrade_min_button_delay, 1600, MIN_BUTTON_DELAY);
 upgraded_range!(upgrade_inter_click_delay, 300, INTER_CLICK_DELAY);
@@ -212,6 +213,11 @@ pub struct FullAutoConfig {
     /// is reloaded (the bridge's `GameRestore` path reconnects into the
     /// hand), seconds.
     pub game_stall_secs: u32,
+    /// While running, cover the game page with a transparent curtain that
+    /// swallows the player's own clicks (`autoplay::curtain`), so a stray
+    /// click cannot derail a queue or a hand. Switching to Auto or Manual
+    /// lifts it.
+    pub curtain: bool,
     pub coords: FullAutoCoords,
 }
 
@@ -228,6 +234,7 @@ impl Default for FullAutoConfig {
             rest_between_games_ms: FULL_AUTO_REST,
             queue_timeout_secs: 600,
             game_stall_secs: 300,
+            curtain: true,
             coords: FullAutoCoords::default(),
         }
     }
@@ -470,12 +477,16 @@ pub struct MajsoulAutoplayConfig {
     /// and the client's own `confirmNewRound`, never after the game ends.
     /// See `autoplay::majsoul::round_advance`.
     pub auto_round_confirm: bool,
-    /// Wait after a hand ends before the first OK press (the win reveal
-    /// and yaku list animate first).
+    /// How long the result pages' OK button is in sight before it is
+    /// pressed — a reaction time, drawn per page. The button is watched
+    /// for (`autoplay::majsoul::sight`); the ranges below are only for
+    /// when it cannot be seen.
+    pub ok_reaction_ms: MsRange,
+    /// Blind fallback: wait after a hand ends before the first OK press.
     pub round_confirm_delay_ms: MsRange,
-    /// Gap between OK presses (one per result page).
+    /// Blind fallback: gap between OK presses.
     pub round_confirm_gap_ms: MsRange,
-    /// Most OK presses per hand.
+    /// Blind fallback: most OK presses per hand.
     pub round_confirm_presses: u32,
     /// The hand-result screens' OK button, 16:9 units.
     pub round_ok: [f64; 2],
@@ -512,6 +523,7 @@ impl Default for MajsoulAutoplayConfig {
             dealer_first_discard_extra_delay_ms: DEALER_FIRST_DISCARD_EXTRA,
             park_cursor: true,
             auto_round_confirm: true,
+            ok_reaction_ms: OK_REACTION,
             round_confirm_delay_ms: ROUND_CONFIRM_DELAY,
             round_confirm_gap_ms: ROUND_CONFIRM_GAP,
             round_confirm_presses: 4,

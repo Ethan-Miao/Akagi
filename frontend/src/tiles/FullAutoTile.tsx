@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { invoke } from '@/lib/tauri'
+import { setPlayMode } from '@/lib/playMode'
+import { Switch } from '@/components/ui/switch'
 import { useConfigStore } from '@/stores/configStore'
 import { DEFAULT_FULL_AUTO, useFullAutoStore } from '@/stores/fullAutoStore'
 import type { Breakpoint } from '@/tiles/defaults'
@@ -79,10 +81,13 @@ export function FullAutoTile({ bp }: { bp: Breakpoint }) {
     }
   }
 
+  // Start = the status bar's "Full auto" (turns autoplay on too); Stop
+  // leaves autoplay on, like switching to "Auto".
   const call = async (cmd: 'full_auto_start' | 'full_auto_stop') => {
     setBusy(true)
     try {
-      setStatus(await invoke<FullAutoStatus>(cmd))
+      if (cmd === 'full_auto_start') await setPlayMode('full')
+      else setStatus(await invoke<FullAutoStatus>(cmd))
     } catch (e) {
       toast.error(String(e))
     } finally {
@@ -195,6 +200,19 @@ export function FullAutoTile({ bp }: { bp: Breakpoint }) {
           }}
         />
       </div>
+
+      <label
+        className="flex items-center gap-2 text-xs text-muted-foreground"
+        title={t('full_auto.curtain_hint')}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <Switch
+          size="sm"
+          checked={fa.curtain ?? true}
+          onCheckedChange={(v) => void save({ curtain: v })}
+        />
+        {t('full_auto.curtain')}
+      </label>
 
       <div className="flex gap-1.5">
         <Button

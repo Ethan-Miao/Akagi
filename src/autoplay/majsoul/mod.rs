@@ -13,6 +13,7 @@
 pub mod coords;
 pub mod full_auto;
 pub mod round_advance;
+pub mod sight;
 
 use crate::autoplay::delay::{self, DecisionKind, DelayInput};
 use crate::autoplay::platform::{ActionContext, PlanResult, PlatformAutoplay, Step};

@@ -17,6 +17,10 @@ running.
   With `capture.chromium.embedded` (Windows) it launches nothing: the game
   opens in a child WebView2 of Akagi's main window with a local DevTools
   port (`crate::embed`), and the same CDP half (`run_cdp`) attaches to it.
+  Both the launched browser and the WebView2 get `launch::KEEP_RUNNING_ARGS`
+  plus `CalculateNativeWinOcclusion` disabled, so a game window covered by
+  other windows keeps drawing and its timers run at full speed. Minimised,
+  it still stops (the page is hidden whatever the flags).
 
 Both implement `CaptureBackend`:
 

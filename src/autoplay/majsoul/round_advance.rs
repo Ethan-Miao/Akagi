@@ -3,37 +3,44 @@
 //! After every hand that ends before the game does (a win, an exhaustive
 //! draw, an abortive draw), the client shows one or two result pages (the
 //! win and its yaku, then the score change) and deals the next hand only
-//! after the player closes them — or after its own ~15 s countdown. Closing
-//! the last page is visible on the wire: the client sends
+//! after the player closes them — or after its own countdown. Closing the
+//! last page is visible on the wire: the client sends
 //! `.lq.FastTest.confirmNewRound`.
 //!
-//! That request is the gate, and the reason this can press blind. Presses
-//! happen only between the hand's end (`ActionHule` / `ActionNoTile` /
-//! `ActionLiuJu`) and either the client's `confirmNewRound`, the next deal,
-//! or the game's end — the window in which the result pages cover the
-//! table and there is no hand to touch. The game's last hand is followed by
-//! the game-end notice within milliseconds, so it is never pressed here:
-//! its result screens belong to full-auto (or to the player).
+//! Each page's OK only takes a press once the button is on screen, ~7–8 s
+//! after the win for the first page and ~5 s after the first is closed for
+//! the second, so presses are made when the button is seen
+//! (`majsoul::sight`), a reaction time after it appears. If the screen
+//! cannot be read, presses fall back to a timer and keep going until the
+//! client confirms.
 //!
-//! Each press is followed by a wait for that request; the first that comes
-//! ends the round's presses. If none comes after `round_confirm_presses`,
-//! the client's countdown finishes the job, and the log says the OK
-//! position may need calibrating.
+//! The wire is the gate. Presses happen only between the hand's end
+//! (`ActionHule` / `ActionNoTile` / `ActionLiuJu`) and either the client's
+//! `confirmNewRound`, the next deal, or the game's end — the window in
+//! which the result pages cover the table and there is no hand to touch.
+//! The game's last hand is followed by the game-end notice within
+//! milliseconds, so it is never pressed here: its result screens belong to
+//! full-auto (or to the player).
 
-use crate::autoplay::cdp_input::{dispatch_click, evaluate_canvas_rect, move_to};
+use crate::autoplay::cdp_input::{evaluate_canvas_rect, move_to};
 use crate::autoplay::context::AutoplayContext;
 use crate::autoplay::lobby::LobbyWatch;
 use crate::autoplay::majsoul::coords::CURSOR_REST;
+use crate::autoplay::majsoul::sight::{self, PagesEnd};
 use crate::config::{AppConfig, MajsoulAutoplayConfig, Platform};
 use rand::Rng;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 const POLL: Duration = Duration::from_millis(250);
-/// Click scatter around the OK button, 16:9 units.
-const JITTER: (f64, f64) = (0.07, 0.04);
+/// The longest a hand's result pages are watched. The client's own
+/// countdown has closed them well before this.
+const PAGES_LIMIT: Duration = Duration::from_secs(40);
+/// No OK seen this long after a hand's end: save a screenshot (the first
+/// page's button is normally up ~8 s in).
+const DIAGNOSE_AFTER: Duration = Duration::from_secs(11);
 
 fn watch(ctx: &AutoplayContext) -> LobbyWatch {
     ctx.lobby.read().map(|g| g.clone()).unwrap_or_default()
@@ -93,55 +100,56 @@ pub async fn run_round_advance(cfg: Arc<RwLock<AppConfig>>, ctx: Arc<AutoplayCon
 }
 
 async fn confirm_hand(ctx: &AutoplayContext, ms: &MajsoulAutoplayConfig, start: &LobbyWatch) {
+    let end = sight::press_through_pages(
+        ctx,
+        ms,
+        ms.round_ok,
+        PAGES_LIMIT,
+        Some((DIAGNOSE_AFTER, "hand-ok-not-seen")),
+        |_| !results_up(start, &watch(ctx)),
+    )
+    .await;
+    match end {
+        PagesEnd::Done { presses } => {
+            let w = watch(ctx);
+            if w.round_confirm_seq > start.round_confirm_seq && presses > 0 {
+                info!("autoplay: hand results confirmed after {presses} press(es)");
+            }
+        }
+        PagesEnd::TimedOut { presses } => {
+            warn!(
+                "autoplay: hand results still up after {}s and {presses} press(es)",
+                PAGES_LIMIT.as_secs()
+            );
+        }
+        PagesEnd::SightLost { presses } => {
+            warn!(
+                "autoplay: cannot read the screen for the hand-result OK ({presses} press(es) so far); \
+                 pressing on a timer"
+            );
+            confirm_hand_blind(ctx, ms, start).await;
+        }
+    }
+    park(ctx).await;
+}
+
+/// Timer presses, for when the screen cannot be read: keep pressing until
+/// the client confirms (or its countdown does).
+async fn confirm_hand_blind(ctx: &AutoplayContext, ms: &MajsoulAutoplayConfig, start: &LobbyWatch) {
     if !hold(ctx, start, ms.round_confirm_delay_ms.ms()).await {
-        // The game ended with this hand, or the player was quicker.
         return;
     }
-    for n in 1..=ms.round_confirm_presses {
-        press(ctx, ms, ms.round_ok).await;
+    let presses = ms.round_confirm_presses.max(6);
+    for n in 1..=presses {
+        sight::press(ctx, ms, ms.round_ok).await;
         let gap = ms.round_confirm_gap_ms.draw(&mut rand::rng()).ms();
         if !hold(ctx, start, gap).await {
             let w = watch(ctx);
             if w.round_confirm_seq > start.round_confirm_seq {
-                info!("autoplay: hand results confirmed after {n} press(es)");
+                info!("autoplay: hand results confirmed after {n} blind press(es)");
             }
-            park(ctx).await;
             return;
         }
-    }
-    warn!(
-        "autoplay: {} presses on the hand-result OK brought no confirmNewRound; \
-         the client's countdown will advance — `autoplay.majsoul.round_ok` may need calibrating",
-        ms.round_confirm_presses
-    );
-    park(ctx).await;
-}
-
-async fn press(ctx: &AutoplayContext, ms: &MajsoulAutoplayConfig, at: [f64; 2]) {
-    let page = ctx.page.read().await.as_ref().cloned();
-    let Some(page) = page else { return };
-    let rect = match evaluate_canvas_rect(&page).await {
-        Ok(r) if r.width > 0.0 && r.height > 0.0 => r,
-        Ok(_) => return,
-        Err(e) => {
-            debug!("autoplay: hand-result OK: no canvas rect: {e:#}");
-            return;
-        }
-    };
-    let (jx, jy) = {
-        let mut rng = rand::rng();
-        (
-            rng.random_range(-JITTER.0..=JITTER.0),
-            rng.random_range(-JITTER.1..=JITTER.1),
-        )
-    };
-    let (x, y) = rect.pixel(at[0] + jx, at[1] + jy);
-    if !rect.contains(x, y) {
-        return;
-    }
-    if let Err(e) = dispatch_click(&page, x, y, ms.hover_delay_ms.ms(), ms.click_hold_ms.ms()).await
-    {
-        debug!("autoplay: hand-result OK press failed: {e:#}");
     }
 }
 

@@ -79,6 +79,7 @@ pub fn run() {
 
     info!("Config loaded: {cfg:?}");
     info!("Log session at {}", session.dir().display());
+    autoplay::cdp_input::set_snapshot_dir(session.dir().join("shots"));
 
     // All buses constructed up front so AppState owns the canonical
     // sender clones — every subsystem (bot manager, proxy supervisor,
@@ -325,6 +326,16 @@ pub fn run() {
                     tauri::async_runtime::spawn(async move {
                         autoplay::majsoul::round_advance::run_round_advance(cfg_for_ra, ctx_for_ra)
                             .await;
+                    });
+                }
+
+                // Full-auto curtain over the game page: up exactly while
+                // full-auto runs.
+                {
+                    let cfg_for_c = state.config.clone();
+                    let ctx_for_c = state.autoplay_context.clone();
+                    tauri::async_runtime::spawn(async move {
+                        autoplay::curtain::run_curtain(cfg_for_c, ctx_for_c).await;
                     });
                 }
 

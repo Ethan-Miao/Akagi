@@ -1039,9 +1039,23 @@
       "page_dead": "The page did not recover after reloading.",
       "no_canvas": "Could not find the game canvas.",
       "calibrate": "A room button opened the wrong room — calibrate the room positions."
-    }
+    },
+    "curtain": "Curtain (block my clicks on the game while running)",
+    "curtain_hint": "A transparent cover over the game page swallows your own mouse and keys while full auto runs, so a stray click can’t derail it. Switch to Auto or Manual to take over."
   },
   "game_view": {
     "loading": "Loading the game…"
+  },
+  "play_mode": {
+    "label": "Play mode",
+    "manual": "Manual",
+    "auto": "Auto",
+    "full": "Full auto",
+    "manual_hint": "Recommendations only — you play.",
+    "auto_hint": "Autoplay plays the hands; you queue and close the game-end screens.",
+    "full_hint": "Queue ranked, play, close the results, queue again — until stopped.",
+    "full_needs_majsoul": "Full auto is for Mahjong Soul only.",
+    "full_needs_chromium": "Full auto needs the Chromium capture mode.",
+    "switch_failed": "Could not switch mode"
   }
 }

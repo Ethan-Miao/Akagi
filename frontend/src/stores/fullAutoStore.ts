@@ -36,6 +36,7 @@ export const DEFAULT_FULL_AUTO: FullAutoConfig = {
   rest_between_games_ms: [2000, 9000],
   queue_timeout_secs: 600,
   game_stall_secs: 300,
+  curtain: true,
   coords: {
     ranked: [11.4, 2.65],
     rooms: [

@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { PlayModeSwitch } from '@/components/PlayModeSwitch'
 import { useConfigStore } from '@/stores/configStore'
 import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { useCaptureStore } from '@/stores/captureStore'
@@ -84,6 +85,7 @@ export function Statusbar() {
         label={t(CAPTURE_LABEL[capTone])}
         title={captureTitle}
       />
+      <PlayModeSwitch />
       <span className="flex items-center gap-3">
         {usingApi && (
           <IndicatorDot

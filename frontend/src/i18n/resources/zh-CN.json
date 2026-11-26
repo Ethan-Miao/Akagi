@@ -1039,9 +1039,23 @@
       "page_dead": "刷新后页面仍未恢复。",
       "no_canvas": "找不到游戏画面。",
       "calibrate": "房间按钮点开了别的房间——请校准房间位置。"
-    }
+    },
+    "curtain": "遮罩（运行时屏蔽我对游戏的点击）",
+    "curtain_hint": "全自动运行时在游戏页面上盖一层透明遮罩，吞掉你自己的鼠标和键盘操作，避免误触打乱流程。切到「自动」或「手动」即可接管。"
   },
   "game_view": {
     "loading": "游戏加载中…"
+  },
+  "play_mode": {
+    "label": "模式",
+    "manual": "手动",
+    "auto": "自动",
+    "full": "全自动",
+    "manual_hint": "只显示推荐，由你自己打。",
+    "auto_hint": "自动打牌；排队和对局结束的结算画面由你处理。",
+    "full_hint": "自动排段位、打牌、关结算、再排下一局，直到停止。",
+    "full_needs_majsoul": "全自动只支持雀魂。",
+    "full_needs_chromium": "全自动需要 Chromium 捕获模式。",
+    "switch_failed": "切换模式失败"
   }
 }

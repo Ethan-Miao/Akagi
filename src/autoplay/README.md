@@ -35,7 +35,9 @@ bot answers is the most obvious tell there is.
 | `context.rs` | `AutoplayContext` — shared slots between the capture backend, the bridge and the manager (`page`, `canvas_rect`, `time_budget`, `input_watch`, `tenhou_state`). |
 | `cdp_input.rs` | chromiumoxide wrappers: hover → press → hold → release click sequence (optionally with a mid-press cursor jiggle for retries), canvas rect query, and the Tenhou route's DOM helpers — action-button selectors, the readiness probe, and the call into the injected discard handler. |
 | `lobby.rs` | Majsoul only. `LobbyWatch` — lobby and game-socket facts read off the wire for full-auto: logins (and the 4p/3p rank they carry), `startUnifiedMatch` request/response, found / dropped matches, `authGame`, game end. Written by every Majsoul bridge (lobby and game sockets are separate flows), each fact with a sequence number so full-auto can take a ticket before a click and ask afterwards whether it landed. |
-| `majsoul/round_advance.rs` | Majsoul only. Presses the hand-result pages' OK after each hand that is not the game's last (`auto_round_confirm`), gated on the wire: only between the hand's end (`ActionHule`/`ActionNoTile`/`ActionLiuJu`) and the client's own `confirmNewRound`, the next deal, or the game's end. Without it the client waits out a ~15 s countdown per hand. |
+| `majsoul/round_advance.rs` | Majsoul only. Presses the hand-result pages' OK after each hand that is not the game's last (`auto_round_confirm`), gated on the wire: only between the hand's end (`ActionHule`/`ActionNoTile`/`ActionLiuJu`) and the client's own `confirmNewRound`, the next deal, or the game's end. Each page's OK is pressed once it is seen (`sight.rs`), a reaction time (`ok_reaction_ms`) after it appears; timer presses only if the screen cannot be read. |
+| `majsoul/sight.rs` | Majsoul only. Reads whether a result page's gold OK button is up: a small `Page.captureScreenshot` clip of its spot, counted for gold pixels (0.63 up, ≤0.05 on lobby/table). A press before a page's button exists is dropped, so all result-page presses (hand and game end) wait for it. |
+| `curtain.rs` | While full-auto runs (and `full_auto.curtain`), a transparent full-page element over the game swallows the player's own mouse/keys, with a badge saying why. `cdp_input` opens it around each synthesised press/move/wheel (`__akagiCurtain.arm()`/`.done()`). Re-applied every 2 s, so a reload does not drop it. |
 | cursor parking (`manager.rs`, `majsoul/coords.rs::CURSOR_REST`) | After each decision's presses (and their retries), the pointer moves to a fresh point left of the action buttons and above the hand (`park_cursor`). Left where it pressed, it hovers the slot the next tile slides into and the client raises that tile. |
 | `majsoul/full_auto.rs` | Majsoul only. Full-auto: Ranked → room → mode, verified by the `startUnifiedMatch` it must produce; wait for the match; leave the game to the manager; close the result screens; rest; repeat. Misses are retried, then the page is reloaded; a page that will not recover stops the run with a reason code the dashboard translates. Start/stop is runtime state (`FullAutoControl` in the context), never persisted. Also holds lobby-button calibration (`record_next_click`). |
 | `verify.rs` | Majsoul only. `InputWatch` — counts the client's own uplink input commands (`inputOperation` / `inputChiPengGang`, bumped by the Majsoul bridge). The manager takes a ticket before pressing; if the count never moves, the click was swallowed and the plan is pressed again (bounded by `click_retries`, gated on the decision window still being live). Repeated dead decisions trigger a page reload (`reload_after_failures`), which reconnects into the hand via the bridge's `GameRestore` path. |
@@ -184,10 +186,11 @@ the manager's, and full-auto only watches for a stall (no game traffic for
 
 In the lobby, every press sequence is judged by the wire, not by the
 screen: the mode press must be followed by `.lq.Lobby.startUnifiedMatch`
-(`lobby.rs`) within a few seconds. A miss most often means a result screen
-or popup is still up, so the next attempt is preceded by a press on the
-result-screen OK; two misses in a row reload the page; three reloads
-without a queue stop the run (`page_dead`). A refused request
+(`lobby.rs`) within a few seconds. Every attempt first looks for a result
+page still up (its OK in sight, `sight.rs`) and closes it. A miss saves a
+screenshot to `<log session>/shots/` and backs out of the menus; two
+misses in a row reload the page; three reloads without a queue stop the
+run (`page_dead`). A refused request
 (`Error.code` on the response) stops it at once (`queue_rejected`).
 
 | Phase | Waits for | Then |
@@ -196,7 +199,7 @@ without a queue stop the run (`page_dead`). A refused request
 | `queueing` | `startUnifiedMatch` up, then its response | `queued` |
 | `queued` | `NotifyMatchGameStart` / `authGame` (or `queue_timeout_secs` → reload) | `matched` / `in_game` |
 | `in_game` | the game's end (`NotifyGameEndResult` / `NotifyGameTerminate`) | `results` |
-| `results` | up to `result_presses` presses on the shared OK button, stopping at the client's own-profile reload (`fetchAccountInfo {account_id: 0}`), its cue for being back on the lobby — the OK spot there sits next to the gacha | `resting` → queue |
+| `results` | each page's OK (standings, rank change, rewards) pressed when seen (`sight.rs`); done once no OK has been in sight for 9 s (4 s after the client's own-profile reload, `fetchAccountInfo {account_id: 0}`). Never pressed blind unless the screen cannot be read — the OK spot on the lobby sits next to the gacha | `resting` → queue |
 
 Coordinates (`FullAutoCoords`, 16:9 units like the in-game tables) are
 config, with built-in defaults; the dashboard's calibration arms a one-shot

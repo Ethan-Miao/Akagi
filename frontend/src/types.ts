@@ -124,6 +124,8 @@ export type MajsoulAutoplayConfig = {
   park_cursor?: boolean
   /** Press the hand-result OK after each hand (wire-gated). */
   auto_round_confirm?: boolean
+  /** Reaction time after a result page's OK comes into sight. */
+  ok_reaction_ms?: MsRange
   round_confirm_delay_ms?: MsRange
   round_confirm_gap_ms?: MsRange
   round_confirm_presses?: number
@@ -200,6 +202,9 @@ export type FullAutoConfig = {
   rest_between_games_ms: MsRange
   queue_timeout_secs: number
   game_stall_secs: number
+  /** Cover the game page while running so the player's clicks can't
+   *  derail it. Absent in configs from before the option (default on). */
+  curtain?: boolean
   coords: FullAutoCoords
 }
 

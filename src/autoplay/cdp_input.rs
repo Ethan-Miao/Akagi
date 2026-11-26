@@ -5,11 +5,18 @@
 
 use crate::autoplay::context::CanvasRect;
 use anyhow::{anyhow, Context, Result};
+use base64::Engine as _;
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchMouseEventParams, DispatchMouseEventType, MouseButton,
 };
+use chromiumoxide::cdp::browser_protocol::page::{
+    CaptureScreenshotFormat, CaptureScreenshotParams, Viewport,
+};
 use chromiumoxide::layout::Point;
 use chromiumoxide::page::Page;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Dispatch a single mouse click at `(x, y)` (CSS pixels) as four CDP
@@ -42,6 +49,20 @@ pub async fn dispatch_click(
 /// action still does not commit, the position is not what is wrong, so
 /// the only thing left to change is how the press is made.
 pub async fn dispatch_click_shaped(
+    page: &Page,
+    x: f64,
+    y: f64,
+    hover_delay_ms: u32,
+    click_hold_ms: u32,
+    jiggle: bool,
+) -> Result<()> {
+    curtain_arm(page).await;
+    let out = click_shaped(page, x, y, hover_delay_ms, click_hold_ms, jiggle).await;
+    curtain_done(page).await;
+    out
+}
+
+async fn click_shaped(
     page: &Page,
     x: f64,
     y: f64,
@@ -103,10 +124,14 @@ pub async fn dispatch_click_shaped(
 
 /// Move the pointer to `(x, y)` (CSS pixels) without pressing.
 pub async fn move_to(page: &Page, x: f64, y: f64) -> Result<()> {
-    page.move_mouse(Point::new(x, y))
+    curtain_arm(page).await;
+    let out = page
+        .move_mouse(Point::new(x, y))
         .await
-        .context("CDP move_mouse")?;
-    Ok(())
+        .context("CDP move_mouse")
+        .map(|_| ());
+    curtain_done(page).await;
+    out
 }
 
 /// Scroll the wheel at `(x, y)` (CSS pixels) in `ticks` notches of
@@ -120,6 +145,13 @@ pub async fn dispatch_wheel(
     ticks: u32,
     gap_ms: u32,
 ) -> Result<()> {
+    curtain_arm(page).await;
+    let out = wheel(page, x, y, delta_y, ticks, gap_ms).await;
+    curtain_done(page).await;
+    out
+}
+
+async fn wheel(page: &Page, x: f64, y: f64, delta_y: f64, ticks: u32, gap_ms: u32) -> Result<()> {
     let pt = Point::new(x, y);
     page.move_mouse(pt).await.context("CDP move_mouse")?;
     for i in 0..ticks {
@@ -137,6 +169,164 @@ pub async fn dispatch_wheel(
         }
     }
     Ok(())
+}
+
+// ============================================================================
+// Curtain hand-off
+// ============================================================================
+//
+// While full-auto runs, a transparent element covers the game page and
+// swallows the player's own mouse (`autoplay::curtain`). Synthesised input
+// is hit-tested like any other, so every press, move and wheel here first
+// lets the page's input through and closes it again shortly after —
+// `__akagiCurtain.arm()` / `.done(ms)`, reference-counted on the page so
+// overlapping presses from different tasks cannot reopen it early.
+
+/// Set by `autoplay::curtain` while a curtain may be up, so a press
+/// without one costs no extra round trip.
+pub static CURTAIN_UP: AtomicBool = AtomicBool::new(false);
+
+/// How long after a synthesised event the curtain stays open, ms — the
+/// release has to be delivered to the canvas, not to the curtain.
+const CURTAIN_SLACK_MS: u32 = 160;
+
+async fn curtain_arm(page: &Page) {
+    if CURTAIN_UP.load(Ordering::Relaxed) {
+        let _ = page
+            .evaluate("(()=>{const c=window.__akagiCurtain;if(c)c.arm();return 0})()")
+            .await;
+    }
+}
+
+async fn curtain_done(page: &Page) {
+    if CURTAIN_UP.load(Ordering::Relaxed) {
+        let _ = page
+            .evaluate(format!(
+                "(()=>{{const c=window.__akagiCurtain;if(c)c.done({CURTAIN_SLACK_MS});return 0}})()"
+            ))
+            .await;
+    }
+}
+
+// ============================================================================
+// Screenshots
+// ============================================================================
+
+/// An RGB8 image, row-major.
+#[derive(Debug, Clone)]
+pub struct Pixels {
+    pub width: u32,
+    pub height: u32,
+    pub rgb: Vec<u8>,
+}
+
+/// How long one capture may take before it counts as failed. A page whose
+/// window is minimised produces no frames, and the call would wait for one.
+const CAPTURE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Capture a region of the page (CSS pixels), scaled by `scale`, as RGB.
+///
+/// `Page.captureScreenshot` reads the composited frame, so it works for the
+/// WebGL canvas, whose own buffer is not readable from script.
+pub async fn capture_region(
+    page: &Page,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scale: f64,
+) -> Result<Pixels> {
+    let params = CaptureScreenshotParams::builder()
+        .format(CaptureScreenshotFormat::Png)
+        .clip(Viewport {
+            x,
+            y,
+            width,
+            height,
+            scale,
+        })
+        .from_surface(true)
+        .build();
+    let ret = tokio::time::timeout(CAPTURE_TIMEOUT, page.execute(params))
+        .await
+        .map_err(|_| anyhow!("captureScreenshot timed out"))?
+        .context("CDP captureScreenshot")?;
+    let b64: &str = ret.result.data.as_ref();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .context("captureScreenshot: base64")?;
+    decode_png_rgb(&bytes)
+}
+
+/// Decode a PNG into RGB8, dropping alpha.
+pub fn decode_png_rgb(bytes: &[u8]) -> Result<Pixels> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().context("png header")?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).context("png frame")?;
+    let channels = match info.color_type {
+        png::ColorType::Rgb => 3,
+        png::ColorType::Rgba => 4,
+        png::ColorType::Grayscale => 1,
+        png::ColorType::GrayscaleAlpha => 2,
+        other => return Err(anyhow!("png: unexpected colour type {other:?}")),
+    };
+    let (w, h) = (info.width as usize, info.height as usize);
+    let mut rgb = Vec::with_capacity(w * h * 3);
+    for row in buf[..info.buffer_size()].chunks(info.line_size).take(h) {
+        for px in row.chunks(channels).take(w) {
+            match channels {
+                1 | 2 => rgb.extend_from_slice(&[px[0], px[0], px[0]]),
+                _ => rgb.extend_from_slice(&px[..3]),
+            }
+        }
+    }
+    Ok(Pixels {
+        width: info.width,
+        height: info.height,
+        rgb,
+    })
+}
+
+static SHOT_DIR: OnceLock<PathBuf> = OnceLock::new();
+static SHOTS_TAKEN: AtomicU32 = AtomicU32::new(0);
+/// Diagnostic screenshots per session, at most.
+const MAX_SHOTS: u32 = 60;
+
+/// Where [`snapshot`] writes: `<log session>/shots`. Set once at startup.
+pub fn set_snapshot_dir(dir: PathBuf) {
+    let _ = SHOT_DIR.set(dir);
+}
+
+/// Save what the game page shows right now as a JPEG in the log session,
+/// named after `tag`, for diagnosing a step that did not work. Best-effort
+/// and capped per session; returns the path written.
+pub async fn snapshot(page: &Page, tag: &str) -> Option<PathBuf> {
+    let dir = SHOT_DIR.get()?;
+    if SHOTS_TAKEN.fetch_add(1, Ordering::Relaxed) >= MAX_SHOTS {
+        return None;
+    }
+    let params = CaptureScreenshotParams::builder()
+        .format(CaptureScreenshotFormat::Jpeg)
+        .quality(70)
+        .from_surface(true)
+        .build();
+    let ret = tokio::time::timeout(CAPTURE_TIMEOUT, page.execute(params))
+        .await
+        .ok()?
+        .ok()?;
+    let b64: &str = ret.result.data.as_ref();
+    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+    std::fs::create_dir_all(dir).ok()?;
+    let name = format!(
+        "{}-{}.jpg",
+        chrono::Local::now().format("%H%M%S%.3f"),
+        tag.replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "_")
+    );
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).ok()?;
+    Some(path)
 }
 
 /// Read the game canvas's `getBoundingClientRect()` via `Runtime.evaluate`.

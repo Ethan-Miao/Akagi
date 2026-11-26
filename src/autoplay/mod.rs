@@ -72,6 +72,7 @@ pub mod advisor;
 pub mod budget;
 pub mod cdp_input;
 pub mod context;
+pub mod curtain;
 pub mod delay;
 pub mod inject;
 pub mod lobby;

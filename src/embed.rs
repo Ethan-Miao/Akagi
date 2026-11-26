@@ -116,10 +116,12 @@ pub async fn open(url: &str, data_dir: PathBuf, port: u16) -> Result<()> {
         .parse()
         .with_context(|| format!("embedded game view: bad start URL {url:?}"))?;
     // Passing our own arguments replaces wry's defaults, so they are
-    // repeated here.
+    // repeated here. The rest keep the game drawing at full speed while the
+    // window is covered (see `launch::KEEP_RUNNING_ARGS`).
     let args = format!(
         "--remote-debugging-port={port} \
-         --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+         --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion {}",
+        crate::capture::chromium::launch::KEEP_RUNNING_ARGS.join(" ")
     );
     let builder = WebviewBuilder::new(LABEL, WebviewUrl::External(parsed))
         .data_directory(data_dir.clone())

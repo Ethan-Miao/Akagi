@@ -37,6 +37,17 @@ struct RemoteDebuggingConfig {
     port: Option<u16>,
 }
 
+/// Keep the game running at full speed when its window is covered by
+/// another one or not focused: no occlusion tracking (with
+/// `CalculateNativeWinOcclusion` disabled), no background renderer priority,
+/// no timer throttling. A *minimised* window still stops drawing — the
+/// browser hides its pages, whatever the flags.
+pub const KEEP_RUNNING_ARGS: [&str; 3] = [
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+];
+
 pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<SpawnedChromium> {
     let remote_debugging = remote_debugging_config(&cfg.extra_args)?;
     let mut cmd = Command::new(exe);
@@ -46,13 +57,14 @@ pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<Spawned
     }
     cmd.arg("--no-first-run")
         .arg("--no-default-browser-check")
-        .arg("--disable-features=TranslateUI,InterestFeedContentSuggestions")
+        .arg("--disable-features=TranslateUI,InterestFeedContentSuggestions,CalculateNativeWinOcclusion")
         .arg("--disable-search-engine-choice-screen")
         .arg("--disable-component-update")
         .arg("--disable-background-networking")
         .arg("--disable-sync")
         .arg("--metrics-recording-only")
-        .arg("--no-pings");
+        .arg("--no-pings")
+        .args(KEEP_RUNNING_ARGS);
     if cfg!(target_os = "linux") {
         // Chromium occasionally crashes on Linux when /dev/shm is small (e.g. Docker).
         cmd.arg("--disable-dev-shm-usage");

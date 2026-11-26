@@ -1817,8 +1817,14 @@ use crate::autoplay::majsoul::full_auto::{self, CalibrationTarget, FullAutoStatu
 /// are checked by the runner, which stops at once with a reason the
 /// dashboard shows; this only refuses a double start.
 #[tauri::command]
-pub async fn full_auto_start(state: State<'_, AppState>) -> CmdResult<FullAutoStatus> {
+pub async fn full_auto_start(
+    lang: Option<String>,
+    state: State<'_, AppState>,
+) -> CmdResult<FullAutoStatus> {
     let control = &state.autoplay_context.full_auto;
+    if let Some(lang) = lang {
+        control.set_lang(&lang);
+    }
     if !control.start() {
         return Err("full auto is already running".into());
     }

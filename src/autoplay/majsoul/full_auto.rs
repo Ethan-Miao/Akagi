@@ -19,9 +19,10 @@
 //! the dashboard. Settings are read from `autoplay.full_auto` at the start
 //! of every queue, so a change takes effect at the next game.
 
-use crate::autoplay::cdp_input::{dispatch_click, dispatch_wheel, evaluate_canvas_rect};
+use crate::autoplay::cdp_input::{dispatch_click, dispatch_wheel, evaluate_canvas_rect, snapshot};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::autoplay::lobby::{self, LobbyWatch, QueueEvent};
+use crate::autoplay::majsoul::sight::{self, PagesEnd, PagesSoFar};
 use crate::config::{AppConfig, CaptureMode, FullAutoConfig, FullAutoMode, FullAutoRoom, Platform};
 use crate::event_bus::NotifyBus;
 use crate::schema::Notification;
@@ -62,6 +63,16 @@ const MAX_RELOADS: u32 = 3;
 /// Click scatter around a target, in 16:9 units (~±7 px / ±5 px at 1080p).
 const JITTER_X: f64 = 0.06;
 const JITTER_Y: f64 = 0.04;
+/// The longest the game-end pages are watched before queueing anyway.
+const RESULTS_LIMIT: Duration = Duration::from_secs(90);
+/// After at least one press, the pages count as closed once the OK button
+/// has been out of sight this long. The next page's button can take ~5 s
+/// to come up after a press.
+const RESULTS_QUIET: Duration = Duration::from_secs(9);
+/// …or this long, once the client has also reloaded its own profile.
+const RESULTS_QUIET_WITH_CUE: Duration = Duration::from_secs(4);
+/// With no OK seen at all, give up watching after this long.
+const RESULTS_NONE_SEEN: Duration = Duration::from_secs(45);
 /// Room-list scroll: notches and their size.
 const SCROLL_TICKS: u32 = 5;
 const SCROLL_DELTA: f64 = 240.0;
@@ -143,6 +154,9 @@ impl Default for FullAutoStatus {
 pub struct FullAutoControl {
     run: watch::Sender<bool>,
     status: watch::Sender<FullAutoStatus>,
+    /// The dashboard's language, for text shown inside the game page (the
+    /// curtain's badge).
+    lang: std::sync::Mutex<String>,
 }
 
 impl Default for FullAutoControl {
@@ -150,6 +164,7 @@ impl Default for FullAutoControl {
         Self {
             run: watch::Sender::new(false),
             status: watch::Sender::new(FullAutoStatus::default()),
+            lang: std::sync::Mutex::new(String::new()),
         }
     }
 }
@@ -174,6 +189,20 @@ impl FullAutoControl {
 
     pub fn subscribe_status(&self) -> watch::Receiver<FullAutoStatus> {
         self.status.subscribe()
+    }
+
+    pub fn subscribe_run(&self) -> watch::Receiver<bool> {
+        self.run.subscribe()
+    }
+
+    pub fn set_lang(&self, lang: &str) {
+        if let Ok(mut l) = self.lang.lock() {
+            *l = lang.to_string();
+        }
+    }
+
+    pub fn lang(&self) -> String {
+        self.lang.lock().map(|l| l.clone()).unwrap_or_default()
     }
 
     fn publish(&self, f: impl FnOnce(&mut FullAutoStatus)) {
@@ -444,6 +473,7 @@ impl Session {
                 QueueOutcome::Missed => {
                     misses += 1;
                     warn!("full-auto: queue attempt {misses} produced no queue request");
+                    self.snap(&format!("queue-miss-{misses}")).await;
                     if misses >= MISSES_BEFORE_RELOAD {
                         misses = 0;
                         self.reload("the lobby presses are not landing").await?;
@@ -479,6 +509,12 @@ impl Session {
                 fa.mode
             ),
         );
+        // A result page still up (its OK in sight) would take every press
+        // below; close it first.
+        if matches!(sight::look(&self.ctx).await, Ok(g) if g >= sight::GOLD_SEEN) {
+            info!("full-auto: a result page is still up; closing it before queueing");
+            self.close_pages(ms).await;
+        }
         let ticket = self.watch().queue_seq;
         let step = || draw(fa.step_delay_ms);
 
@@ -667,27 +703,26 @@ impl Session {
         }
     }
 
-    /// Press through the result screens, then rest before the next queue.
+    /// Press through the game-end pages, then rest before the next queue.
     ///
-    /// Stops pressing as soon as the client reloads its own profile — its
-    /// cue for being back on the lobby — because the OK spot there sits
-    /// next to the gacha entry. Without the cue it stops after
-    /// `result_presses`; the queue attempt that follows verifies the rest.
+    /// Each page's OK is pressed when it is seen (`majsoul::sight`) — the
+    /// standings, the rank change and the rewards come up one after the
+    /// other, each only once the previous one is closed — and the pages
+    /// count as done once no OK has been in sight for a while. If the
+    /// screen cannot be read, presses fall back to a timer.
     async fn close_results(&mut self) -> Step<()> {
         let (fa, ms) = self.settings().await?;
         self.phase(FullAutoPhase::Results, "closing the result screens");
-        let lobby_ticket = self.watch().self_info_seq;
-        let back = |w: &LobbyWatch| w.self_info_seq > lobby_ticket || w.in_game;
-        self.sleep(draw(fa.result_delay_ms)).await;
-        for _ in 0..fa.result_presses {
-            if back(&self.watch()) {
-                break;
-            }
-            self.press(&ms, fa.coords.result_ok).await?;
-            // Wait out the gap, but leave it early on the cue.
-            let gap = Duration::from_millis(u64::from(draw(fa.result_gap_ms)));
-            if self.wait_for(gap, back).await.is_some() {
-                break;
+        let presses = self.close_pages(&ms).await;
+        if presses.is_none() {
+            // Sight lost: the timer presses of old.
+            self.sleep(draw(fa.result_delay_ms)).await;
+            for _ in 0..fa.result_presses {
+                if self.watch().in_game {
+                    break;
+                }
+                self.press(&ms, fa.coords.result_ok).await?;
+                self.sleep(draw(fa.result_gap_ms)).await;
             }
         }
         if self.watch().in_game {
@@ -696,6 +731,63 @@ impl Session {
         self.phase(FullAutoPhase::Resting, "resting before the next game");
         self.sleep(draw(fa.rest_between_games_ms)).await;
         Ok(())
+    }
+
+    /// Press every result page's OK as it comes up until none has been in
+    /// sight for a while. `Some(presses)`, or `None` if the screen could
+    /// not be read.
+    async fn close_pages(&self, ms: &crate::config::MajsoulAutoplayConfig) -> Option<u32> {
+        let at = self.cfg.read().await.autoplay.full_auto.coords.result_ok;
+        let cue_ticket = self.watch().self_info_seq;
+        let ctx = self.ctx.clone();
+        let done = move |p: &PagesSoFar| {
+            let w = ctx.lobby.read().map(|g| g.clone()).unwrap_or_default();
+            if w.in_game {
+                return true;
+            }
+            let quiet = p.since_seen.unwrap_or(p.elapsed);
+            if p.presses == 0 {
+                return p.since_seen.is_none() && p.elapsed >= RESULTS_NONE_SEEN;
+            }
+            let cue = w.self_info_seq > cue_ticket;
+            quiet >= RESULTS_QUIET || (cue && quiet >= RESULTS_QUIET_WITH_CUE)
+        };
+        let diagnose = Some((Duration::from_secs(20), "results-ok-not-seen"));
+        match sight::press_through_pages(&self.ctx, ms, at, RESULTS_LIMIT, diagnose, done).await {
+            PagesEnd::Done { presses } => {
+                if presses == 0 {
+                    warn!("full-auto: no result-page OK came into sight");
+                    self.snap("results-none-seen").await;
+                } else {
+                    info!("full-auto: result pages closed after {presses} press(es)");
+                }
+                Some(presses)
+            }
+            PagesEnd::TimedOut { presses } => {
+                warn!(
+                    "full-auto: result pages still coming after {}s ({presses} press(es))",
+                    RESULTS_LIMIT.as_secs()
+                );
+                self.snap("results-timeout").await;
+                Some(presses)
+            }
+            PagesEnd::SightLost { presses } => {
+                warn!(
+                    "full-auto: cannot read the screen for the result OK ({presses} press(es)); \
+                     pressing on a timer"
+                );
+                None
+            }
+        }
+    }
+
+    /// Save a screenshot of the game page in the log session (`shots/`).
+    async fn snap(&self, tag: &str) {
+        if let Some(page) = self.page().await {
+            if let Some(path) = snapshot(&page, tag).await {
+                info!("full-auto: screenshot saved: {}", path.display());
+            }
+        }
     }
 
     /// Whether a room's mode list is on screen: it polls
