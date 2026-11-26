@@ -10,7 +10,7 @@ use chromiumoxide::cdp::browser_protocol::input::{
     DispatchMouseEventParams, DispatchMouseEventType, MouseButton,
 };
 use chromiumoxide::cdp::browser_protocol::page::{
-    CaptureScreenshotFormat, CaptureScreenshotParams, Viewport,
+    CaptureScreenshotFormat, CaptureScreenshotParams,
 };
 use chromiumoxide::layout::Point;
 use chromiumoxide::page::Page;
@@ -224,28 +224,19 @@ pub struct Pixels {
 /// window is minimised produces no frames, and the call would wait for one.
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Capture a region of the page (CSS pixels), scaled by `scale`, as RGB.
+/// Capture the whole viewport as RGB, in device pixels.
 ///
-/// `Page.captureScreenshot` reads the composited frame, so it works for the
-/// WebGL canvas, whose own buffer is not readable from script.
-pub async fn capture_region(
-    page: &Page,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    scale: f64,
-) -> Result<Pixels> {
+/// Deliberately without `clip`: Chromium renders a clipped capture by
+/// emulating a viewport scrolled and scaled to the clip, which a visible
+/// window shows as a white flash with the clipped area drawn in its
+/// top-left corner. A plain capture copies the frame as it is, unseen.
+/// `Page.captureScreenshot` reads the composited frame, so it works for
+/// the WebGL canvas, whose own buffer is not readable from script.
+pub async fn capture_viewport(page: &Page) -> Result<Pixels> {
     let params = CaptureScreenshotParams::builder()
         .format(CaptureScreenshotFormat::Png)
-        .clip(Viewport {
-            x,
-            y,
-            width,
-            height,
-            scale,
-        })
         .from_surface(true)
+        .optimize_for_speed(true)
         .build();
     let ret = tokio::time::timeout(CAPTURE_TIMEOUT, page.execute(params))
         .await
@@ -256,6 +247,25 @@ pub async fn capture_region(
         .decode(b64)
         .context("captureScreenshot: base64")?;
     decode_png_rgb(&bytes)
+}
+
+impl Pixels {
+    /// The pixels of a sub-rectangle (clamped to the image), row-major.
+    pub fn crop(&self, x0: u32, y0: u32, x1: u32, y1: u32) -> Pixels {
+        let (x1, y1) = (x1.min(self.width), y1.min(self.height));
+        let (x0, y0) = (x0.min(x1), y0.min(y1));
+        let w = (x1 - x0) as usize;
+        let mut rgb = Vec::with_capacity(w * (y1 - y0) as usize * 3);
+        for y in y0..y1 {
+            let row = (y as usize * self.width as usize + x0 as usize) * 3;
+            rgb.extend_from_slice(&self.rgb[row..row + w * 3]);
+        }
+        Pixels {
+            width: x1 - x0,
+            height: y1 - y0,
+            rgb,
+        }
+    }
 }
 
 /// Decode a PNG into RGB8, dropping alpha.

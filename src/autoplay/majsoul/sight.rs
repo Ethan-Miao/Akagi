@@ -1,50 +1,52 @@
 //! Mahjong Soul result pages: see the OK button before pressing it.
 //!
-//! Every page the client puts up when a hand or a game ends — the win and
-//! its yaku, the score change, the final standings, the rank change, the
-//! rewards — is closed by the same gold OK button in the bottom-right
-//! corner. A press only registers once that button is on screen: presses
-//! during a page's entrance animation are dropped, and the pages take
-//! different times to come up (a hand page ~7–8 s after the win, the next
-//! one ~5 s after it is closed; a game's three pages likewise). Presses on
-//! a timer therefore miss whenever a page is slower than the timer, and a
-//! game-end page nobody closes stays up for good — the lobby presses after
-//! it then land on the result page and the queue never starts.
+//! Every page the client puts up when a hand or a game ends is closed by
+//! an OK button in the bottom-right corner, at the same spot: on a hand's
+//! pages (the win and its yaku, the score change, a draw) a navy button
+//! with a countdown, "(3)確認"; on a game's pages (the standings, the
+//! rewards) a gold one. A press only registers once the button is on
+//! screen — presses during a page's entrance animation are dropped — and
+//! the pages take different times to come up (a hand page ~8–10 s after
+//! the win, a game's first page 20 s and more after its end). Presses on a
+//! timer therefore miss whenever a page is slower than the timer, and a
+//! game-end page nobody closes stays up for good: the lobby presses after
+//! it land on the result page and the queue never starts.
 //!
-//! So the presses here wait for the button. A small clip of the screen
-//! where it sits is captured (`Page.captureScreenshot`, which reads the
-//! composited frame, so it works on the WebGL canvas) and its share of
-//! gold pixels counted: ~0.63 with the button up, ≤0.05 on the lobby and
-//! the table. When the button has been in sight for a reaction time, it is
-//! pressed; the next page's button is waited for the same way.
+//! So the presses here wait for the button. The viewport is captured
+//! (`Page.captureScreenshot`, which reads the composited frame, so it works
+//! on the WebGL canvas) and the button's spot counted for its colours:
+//! gold ~0.63 with the gold button up, navy ~0.35 with the navy one, both
+//! 0.00 on the table and ≤0.05 on the lobby. When a button has been in
+//! sight for a reaction time, it is pressed; the next page's button is
+//! waited for the same way.
 
 use crate::autoplay::cdp_input::{
-    capture_region, dispatch_click, evaluate_canvas_rect, snapshot, Pixels,
+    capture_viewport, dispatch_click, evaluate_canvas_rect, snapshot, Pixels,
 };
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::config::MajsoulAutoplayConfig;
-use anyhow::Result;
-use chromiumoxide::page::Page;
+use anyhow::{anyhow, Result};
 use rand::Rng;
 use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
-/// Where the OK button's face sits, 16:9 units: `((x0, x1), (y0, y1))`.
-/// Inside the button's edges (it spans ~13.5–15.6 × 7.95–8.5), so a page
-/// whose button is a few pixels off still fills the box.
+/// Where the OK buttons' faces sit, 16:9 units: `((x0, x1), (y0, y1))`.
+/// The gold button spans ~13.5–15.6 × 7.95–8.55, the navy one
+/// ~13.9–15.3 × 8.1–8.5; the box lies (nearly) inside both.
 pub const OK_BOX: ((f64, f64), (f64, f64)) = ((13.75, 15.35), (8.02, 8.48));
 
-/// Share of gold pixels in [`OK_BOX`] from which the button counts as up.
-/// Measured: 0.63 on all three game-end pages; 0.05 on the lobby, 0.00 on
-/// the table. A button still fading in sits in between and is not pressed.
+/// Share of gold pixels in [`OK_BOX`] from which the gold button counts as
+/// up. Measured 0.63 on every game-end page with the button; 0.05 on the
+/// lobby, 0.00 on the table. A button still fading in sits in between and
+/// is not pressed yet.
 pub const GOLD_SEEN: f64 = 0.30;
+/// The same for the navy button's blue: measured 0.35–0.37 on hand-result
+/// and draw pages with the button, 0.00 everywhere else.
+pub const BLUE_SEEN: f64 = 0.20;
 
-/// Captured width of the box, pixels — enough to count colours, small
-/// enough to cost a few milliseconds.
-const SAMPLE_WIDTH: f64 = 120.0;
-
-/// Pause between looks.
-const LOOK_EVERY: (u64, u64) = (220, 380);
+/// Pause between looks. A look is a full-viewport capture, so not too
+/// often.
+const LOOK_EVERY: (u64, u64) = (320, 520);
 /// After a press, the soonest the same button is pressed again if it is
 /// still up (the press was dropped).
 const REPRESS_GAP: Duration = Duration::from_millis(1600);
@@ -53,53 +55,100 @@ const LOST_AFTER: u32 = 6;
 /// Click scatter around the OK button, 16:9 units.
 const JITTER: (f64, f64) = (0.07, 0.04);
 
-/// The button's gold: bright, warm, little blue.
+/// The gold button's gold: bright, warm, little blue.
 pub fn is_gold(r: u8, g: u8, b: u8) -> bool {
     let (r, g, b) = (i32::from(r), i32::from(g), i32::from(b));
     r >= 190 && g >= 140 && b <= 120 && r - b >= 100
 }
 
-/// Share of gold pixels in an image, `0.0..=1.0`.
-pub fn gold_share(px: &Pixels) -> f64 {
-    let n = px.rgb.len() / 3;
-    if n == 0 {
-        return 0.0;
-    }
-    let gold = px
-        .rgb
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .filter(|&&[r, g, b]| is_gold(r, g, b))
-        .count();
-    gold as f64 / n as f64
+/// The navy button's blue — far brighter and bluer than the table's navy
+/// felt (~17, 28, 46).
+pub fn is_button_blue(r: u8, g: u8, b: u8) -> bool {
+    let (r, g, b) = (i32::from(r), i32::from(g), i32::from(b));
+    b >= 110 && b - r >= 50 && b - g >= 25 && r <= 110
 }
 
-/// The CSS-pixel clip of [`OK_BOX`] on a canvas.
-pub fn ok_clip(rect: &CanvasRect) -> (f64, f64, f64, f64) {
+/// What the OK spot shows: shares of gold and of button blue.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct OkLook {
+    pub gold: f64,
+    pub blue: f64,
+}
+
+impl OkLook {
+    /// The gold button (game-end pages) is up.
+    pub fn gold_up(&self) -> bool {
+        self.gold >= GOLD_SEEN
+    }
+    /// Either button is up.
+    pub fn up(&self) -> bool {
+        self.gold_up() || self.blue >= BLUE_SEEN
+    }
+}
+
+/// Count an image's gold and button-blue pixels.
+pub fn classify(px: &Pixels) -> OkLook {
+    let (chunks, _) = px.rgb.as_chunks::<3>();
+    if chunks.is_empty() {
+        return OkLook::default();
+    }
+    let (mut gold, mut blue) = (0usize, 0usize);
+    for &[r, g, b] in chunks {
+        if is_gold(r, g, b) {
+            gold += 1;
+        } else if is_button_blue(r, g, b) {
+            blue += 1;
+        }
+    }
+    let n = chunks.len() as f64;
+    OkLook {
+        gold: gold as f64 / n,
+        blue: blue as f64 / n,
+    }
+}
+
+/// [`OK_BOX`] in the pixels of a viewport capture `size` = (width, height),
+/// for a canvas at `rect` in a viewport of `inner` CSS pixels.
+pub fn ok_box_px(rect: &CanvasRect, inner: (f64, f64), size: (u32, u32)) -> (u32, u32, u32, u32) {
     let ((x0, x1), (y0, y1)) = OK_BOX;
+    let (sx, sy) = (
+        f64::from(size.0) / inner.0.max(1.0),
+        f64::from(size.1) / inner.1.max(1.0),
+    );
     let (px0, py0) = rect.pixel(x0, y0);
     let (px1, py1) = rect.pixel(x1, y1);
-    (px0, py0, (px1 - px0).max(1.0), (py1 - py0).max(1.0))
+    let px = |v: f64, s: f64| (v * s).round().max(0.0) as u32;
+    (px(px0, sx), px(py0, sy), px(px1, sx), px(py1, sy))
 }
 
-/// Gold share of the OK button's spot right now.
-pub async fn ok_gold(page: &Page, rect: &CanvasRect) -> Result<f64> {
-    let (x, y, w, h) = ok_clip(rect);
-    let scale = (SAMPLE_WIDTH / w).clamp(0.05, 1.0);
-    let px = capture_region(page, x, y, w, h, scale).await?;
-    Ok(gold_share(&px))
-}
+/// Canvas rect and viewport size in one round trip.
+const GEOMETRY_JS: &str = "(()=>{const c=document.getElementsByTagName('canvas')[0];\
+if(!c)return null;const r=c.getBoundingClientRect();\
+return [r.left,r.top,r.width,r.height,window.innerWidth,window.innerHeight]})()";
 
-/// Gold share of the OK spot on the bound game page, if there is one.
-pub async fn look(ctx: &AutoplayContext) -> Result<f64> {
+/// What the OK spot on the bound game page shows right now.
+pub async fn look(ctx: &AutoplayContext) -> Result<OkLook> {
     let page = ctx.page.read().await.as_ref().cloned();
-    let page = page.ok_or_else(|| anyhow::anyhow!("no game page"))?;
-    let rect = evaluate_canvas_rect(&page).await?;
-    if rect.width <= 0.0 || rect.height <= 0.0 {
+    let page = page.ok_or_else(|| anyhow!("no game page"))?;
+    let geo: Option<[f64; 6]> = page
+        .evaluate(GEOMETRY_JS)
+        .await
+        .map_err(|e| anyhow!("canvas geometry: {e}"))?
+        .into_value()
+        .map_err(|e| anyhow!("canvas geometry: {e}"))?;
+    let [x, y, width, height, iw, ih] = geo.ok_or_else(|| anyhow!("no canvas"))?;
+    if width <= 0.0 || height <= 0.0 {
         anyhow::bail!("the game canvas has no size");
     }
-    ok_gold(&page, &rect).await
+    let rect = CanvasRect {
+        x,
+        y,
+        width,
+        height,
+    };
+    let frame = capture_viewport(&page).await?;
+    let (x0, y0, x1, y1) = ok_box_px(&rect, (iw, ih), (frame.width, frame.height));
+    Ok(classify(&frame.crop(x0, y0, x1, y1)))
 }
 
 /// One press at a 16:9 point on the bound page, scattered a little, with
@@ -211,15 +260,18 @@ pub async fn press_through_pages(
             }
         }
         match look(ctx).await {
-            Ok(gold) => {
+            Ok(seen) => {
                 failures = 0;
-                if gold >= GOLD_SEEN {
+                if seen.up() {
                     let now = Instant::now();
                     last_seen = Some(now);
                     let since = *up_since.get_or_insert(now);
                     let rested = last_press.is_none_or(|t| now - t >= REPRESS_GAP);
                     if now - since >= reaction && rested {
-                        debug!("autoplay: result OK in sight (gold {gold:.2}); pressing");
+                        info!(
+                            "autoplay: result OK in sight (gold {:.2}, blue {:.2}); pressing",
+                            seen.gold, seen.blue
+                        );
                         press(ctx, ms, at).await;
                         presses += 1;
                         last_press = Some(Instant::now());
@@ -261,46 +313,100 @@ mod tests {
 
     #[test]
     fn button_gold_is_gold() {
-        // Face, highlight and the darker lower rim of the button.
+        // Face, highlight and the darker lower rim of the gold button.
         assert!(is_gold(250, 205, 70));
         assert!(is_gold(255, 230, 110));
         assert!(is_gold(214, 160, 40));
+        assert!(!is_button_blue(250, 205, 70));
     }
 
     #[test]
-    fn table_and_lobby_colours_are_not() {
-        assert!(!is_gold(240, 240, 240), "white tile face");
-        assert!(!is_gold(30, 90, 60), "table felt");
-        assert!(!is_gold(20, 25, 45), "dark panel");
-        assert!(!is_gold(230, 120, 140), "pink");
-        assert!(!is_gold(200, 170, 150), "skin / beige: too much blue");
+    fn button_navy_is_blue() {
+        // Sampled off the "(2)確認" button of a score-change page.
+        assert!(is_button_blue(49, 68, 124));
+        assert!(is_button_blue(52, 67, 124));
+        assert!(!is_gold(49, 68, 124));
     }
 
     #[test]
-    fn share_counts_gold_pixels() {
-        let img = image(&[
+    fn table_and_lobby_colours_are_neither() {
+        for (r, g, b, what) in [
+            (240, 240, 240, "white tile face"),
+            (17, 28, 46, "navy felt"),
+            (13, 20, 46, "navy felt, darker"),
+            (30, 90, 60, "green felt"),
+            (20, 25, 45, "dark panel"),
+            (230, 120, 140, "pink"),
+            (200, 170, 150, "beige: too much blue for gold"),
+            (65, 62, 105, "dim violet: not blue enough"),
+        ] {
+            assert!(!is_gold(r, g, b), "{what}");
+            assert!(!is_button_blue(r, g, b), "{what}");
+        }
+    }
+
+    #[test]
+    fn classify_counts_both_buttons() {
+        let gold = image(&[
             (250, 205, 70),
             (250, 205, 70),
             (30, 90, 60),
             (240, 240, 240),
         ]);
-        assert!((gold_share(&img) - 0.5).abs() < 1e-9);
-        assert_eq!(gold_share(&image(&[])), 0.0);
+        let seen = classify(&gold);
+        assert!((seen.gold - 0.5).abs() < 1e-9 && seen.blue == 0.0);
+        assert!(seen.gold_up() && seen.up());
+
+        let navy = image(&[(49, 68, 124), (17, 28, 46), (201, 173, 151)]);
+        let seen = classify(&navy);
+        assert!((seen.blue - 1.0 / 3.0).abs() < 1e-9 && seen.gold == 0.0);
+        assert!(!seen.gold_up() && seen.up());
+
+        let felt = image(&[(17, 28, 46); 8]);
+        assert!(!classify(&felt).up());
+        assert_eq!(classify(&image(&[])), OkLook::default());
     }
 
     #[test]
-    fn clip_tracks_the_canvas() {
+    fn box_maps_into_device_pixels() {
+        // The embedded view of the shots: a 1058×895 viewport, the canvas
+        // full width and centred. The navy button there spans x 917–1013,
+        // y 685–713; the gold one x 892–1030, y 675–715.
         let rect = CanvasRect {
             x: 0.0,
-            y: 167.0,
-            width: 1173.33,
-            height: 660.0,
+            y: 150.0,
+            width: 1058.0,
+            height: 595.125,
         };
-        let (x, y, w, h) = ok_clip(&rect);
-        // Inside the button measured on a 1173×660 canvas: x 991–1143,
-        // y 749–792 (screen).
-        assert!(x > 991.0 && x + w < 1143.0, "x {x} w {w}");
-        assert!(y > 749.0 && y + h < 793.0, "y {y} h {h}");
+        let (x0, y0, x1, y1) = ok_box_px(&rect, (1058.0, 895.0), (1058, 895));
+        assert!(x0 >= 905 && x1 <= 1016, "x {x0}..{x1}");
+        assert!(y0 >= 680 && y1 <= 716, "y {y0}..{y1}");
+        // At 150 % scaling the capture is 1.5× the CSS viewport.
+        let (a0, b0, a1, b1) = ok_box_px(&rect, (1058.0, 895.0), (1587, 1342));
+        assert_eq!(
+            (a0, a1),
+            (
+                (x0 as f64 * 1.5).round() as u32,
+                (x1 as f64 * 1.5).round() as u32
+            )
+        );
+        assert!(b0 > y0 && b1 > y1);
+    }
+
+    #[test]
+    fn crop_takes_the_sub_rectangle() {
+        // 3×2 image, pixel value = its index.
+        let px = Pixels {
+            width: 3,
+            height: 2,
+            rgb: (0u8..6).flat_map(|i| [i, i, i]).collect(),
+        };
+        let c = px.crop(1, 0, 3, 2);
+        assert_eq!((c.width, c.height), (2, 2));
+        assert_eq!(c.rgb, vec![1, 1, 1, 2, 2, 2, 4, 4, 4, 5, 5, 5]);
+        let clamped = px.crop(2, 1, 9, 9);
+        assert_eq!((clamped.width, clamped.height), (1, 1));
+        assert_eq!(clamped.rgb, vec![5, 5, 5]);
     }
 
     #[test]
@@ -318,6 +424,6 @@ mod tests {
         let px = crate::autoplay::cdp_input::decode_png_rgb(&bytes).unwrap();
         assert_eq!((px.width, px.height), (2, 1));
         assert_eq!(px.rgb, vec![250, 205, 70, 30, 90, 60]);
-        assert!((gold_share(&px) - 0.5).abs() < 1e-9);
+        assert!((classify(&px).gold - 0.5).abs() < 1e-9);
     }
 }

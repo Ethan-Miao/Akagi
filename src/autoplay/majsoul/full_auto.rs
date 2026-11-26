@@ -65,14 +65,14 @@ const JITTER_X: f64 = 0.06;
 const JITTER_Y: f64 = 0.04;
 /// The longest the game-end pages are watched before queueing anyway.
 const RESULTS_LIMIT: Duration = Duration::from_secs(90);
-/// After at least one press, the pages count as closed once the OK button
-/// has been out of sight this long. The next page's button can take ~5 s
-/// to come up after a press.
-const RESULTS_QUIET: Duration = Duration::from_secs(9);
-/// …or this long, once the client has also reloaded its own profile.
-const RESULTS_QUIET_WITH_CUE: Duration = Duration::from_secs(4);
-/// With no OK seen at all, give up watching after this long.
-const RESULTS_NONE_SEEN: Duration = Duration::from_secs(45);
+/// After at least one press, the pages count as closed once no OK button
+/// has been in sight this long. The next page's button can take 10 s and
+/// more to come up after a press; a page still up when the queue starts
+/// is caught there too.
+const RESULTS_QUIET: Duration = Duration::from_secs(16);
+/// With no OK seen at all, give up watching after this long. The first
+/// page's button comes up 20 s and more after the game's end.
+const RESULTS_NONE_SEEN: Duration = Duration::from_secs(60);
 /// Room-list scroll: notches and their size.
 const SCROLL_TICKS: u32 = 5;
 const SCROLL_DELTA: f64 = 240.0;
@@ -511,7 +511,7 @@ impl Session {
         );
         // A result page still up (its OK in sight) would take every press
         // below; close it first.
-        if matches!(sight::look(&self.ctx).await, Ok(g) if g >= sight::GOLD_SEEN) {
+        if matches!(sight::look(&self.ctx).await, Ok(seen) if seen.gold_up()) {
             info!("full-auto: a result page is still up; closing it before queueing");
             self.close_pages(ms).await;
         }
@@ -738,21 +738,20 @@ impl Session {
     /// not be read.
     async fn close_pages(&self, ms: &crate::config::MajsoulAutoplayConfig) -> Option<u32> {
         let at = self.cfg.read().await.autoplay.full_auto.coords.result_ok;
-        let cue_ticket = self.watch().self_info_seq;
+        // The client's own-profile reload (`fetchAccountInfo`) is no cue
+        // here: it comes while the standings are still up.
         let ctx = self.ctx.clone();
         let done = move |p: &PagesSoFar| {
             let w = ctx.lobby.read().map(|g| g.clone()).unwrap_or_default();
             if w.in_game {
                 return true;
             }
-            let quiet = p.since_seen.unwrap_or(p.elapsed);
             if p.presses == 0 {
                 return p.since_seen.is_none() && p.elapsed >= RESULTS_NONE_SEEN;
             }
-            let cue = w.self_info_seq > cue_ticket;
-            quiet >= RESULTS_QUIET || (cue && quiet >= RESULTS_QUIET_WITH_CUE)
+            p.since_seen.unwrap_or(p.elapsed) >= RESULTS_QUIET
         };
-        let diagnose = Some((Duration::from_secs(20), "results-ok-not-seen"));
+        let diagnose = Some((Duration::from_secs(35), "results-ok-not-seen"));
         match sight::press_through_pages(&self.ctx, ms, at, RESULTS_LIMIT, diagnose, done).await {
             PagesEnd::Done { presses } => {
                 if presses == 0 {

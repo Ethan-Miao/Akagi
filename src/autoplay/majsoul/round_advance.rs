@@ -7,9 +7,9 @@
 //! last page is visible on the wire: the client sends
 //! `.lq.FastTest.confirmNewRound`.
 //!
-//! Each page's OK only takes a press once the button is on screen, ~7–8 s
-//! after the win for the first page and ~5 s after the first is closed for
-//! the second, so presses are made when the button is seen
+//! Each page's OK (a navy "(3)確認" with the countdown) only takes a press
+//! once it is on screen, 8–10 s after the win for the first page, so
+//! presses are made when the button is seen
 //! (`majsoul::sight`), a reaction time after it appears. If the screen
 //! cannot be read, presses fall back to a timer and keep going until the
 //! client confirms.
@@ -39,8 +39,8 @@ const POLL: Duration = Duration::from_millis(250);
 /// countdown has closed them well before this.
 const PAGES_LIMIT: Duration = Duration::from_secs(40);
 /// No OK seen this long after a hand's end: save a screenshot (the first
-/// page's button is normally up ~8 s in).
-const DIAGNOSE_AFTER: Duration = Duration::from_secs(11);
+/// page's button is normally up 8–10 s in).
+const DIAGNOSE_AFTER: Duration = Duration::from_secs(14);
 
 fn watch(ctx: &AutoplayContext) -> LobbyWatch {
     ctx.lobby.read().map(|g| g.clone()).unwrap_or_default()
